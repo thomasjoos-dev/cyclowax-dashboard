@@ -382,7 +382,7 @@ class DashboardService
                 ->selectRaw('count(*) as total_customers')
                 ->selectRaw('sum(case when orders_count > 1 then 1 else 0 end) as returning_customers')
                 ->groupBy('country_code')
-                ->having('total_customers', '>=', 10)
+                ->havingRaw('count(*) >= 10')
                 ->orderByDesc('total_customers')
                 ->limit($limit)
                 ->get()
