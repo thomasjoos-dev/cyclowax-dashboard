@@ -12,6 +12,30 @@ use Illuminate\Support\Facades\DB;
 class DashboardService
 {
     /**
+     * Get a database-agnostic expression to extract 'YYYY-MM' from a timestamp column.
+     */
+    protected function yearMonthExpr(string $column): string
+    {
+        if (DB::getDriverName() === 'pgsql') {
+            return "to_char({$column}, 'YYYY-MM')";
+        }
+
+        return "strftime('%Y-%m', {$column})";
+    }
+
+    /**
+     * Get a database-agnostic expression to calculate days between two timestamps.
+     */
+    protected function daysDiffExpr(string $column1, string $column2): string
+    {
+        if (DB::getDriverName() === 'pgsql') {
+            return "EXTRACT(EPOCH FROM ({$column1} - {$column2})) / 86400";
+        }
+
+        return "julianday({$column1}) - julianday({$column2})";
+    }
+
+    /**
      * @return array{revenue: float, revenue_change: float, orders: int, orders_change: float, new_customers: int, new_customers_change: float, returning_rate: float}
      */
     public function kpiMetrics(string $period = 'mtd'): array
@@ -52,7 +76,7 @@ class DashboardService
 
             return ShopifyCustomer::query()
                 ->where('first_order_at', '>=', $since)
-                ->selectRaw("strftime('%Y-%m', first_order_at) as month, count(*) as count")
+                ->selectRaw("{$this->yearMonthExpr('first_order_at')} as month, count(*) as count")
                 ->groupBy('month')
                 ->orderBy('month')
                 ->get()
@@ -100,7 +124,7 @@ class DashboardService
             $data = ShopifyCustomer::query()
                 ->whereNotNull('country_code')
                 ->where('first_order_at', '>=', $since)
-                ->selectRaw("country_code, strftime('%Y-%m', first_order_at) as month, count(*) as count")
+                ->selectRaw("country_code, {$this->yearMonthExpr('first_order_at')} as month, count(*) as count")
                 ->groupBy('country_code', 'month')
                 ->get();
 
@@ -168,7 +192,7 @@ class DashboardService
             $orders = ShopifyOrder::query()
                 ->where('ordered_at', '>=', $since)
                 ->join('shopify_customers', 'shopify_orders.customer_id', '=', 'shopify_customers.id')
-                ->selectRaw("strftime('%Y-%m', shopify_orders.ordered_at) as month")
+                ->selectRaw("{$this->yearMonthExpr('shopify_orders.ordered_at')} as month")
                 ->selectRaw('sum(case when shopify_customers.orders_count <= 1 then 1 else 0 end) as first_count')
                 ->selectRaw('sum(case when shopify_customers.orders_count > 1 then 1 else 0 end) as returning_count')
                 ->groupBy('month')
@@ -200,7 +224,7 @@ class DashboardService
             return ShopifyOrder::query()
                 ->where('ordered_at', '>=', $since)
                 ->join('shopify_customers', 'shopify_orders.customer_id', '=', 'shopify_customers.id')
-                ->selectRaw("strftime('%Y-%m', shopify_orders.ordered_at) as month")
+                ->selectRaw("{$this->yearMonthExpr('shopify_orders.ordered_at')} as month")
                 ->selectRaw('sum(case when shopify_customers.orders_count <= 1 then (shopify_orders.total_price - shopify_orders.tax) else 0 end) as new_revenue')
                 ->selectRaw('sum(case when shopify_customers.orders_count > 1 then (shopify_orders.total_price - shopify_orders.tax) else 0 end) as returning_revenue')
                 ->groupBy('month')
@@ -292,14 +316,16 @@ class DashboardService
     {
         return Cache::remember('dashboard:time_to_second', 3600, function () {
             // Find the gap between first and second order per customer
-            $gaps = DB::select(<<<'SQL'
+            $daysDiff = $this->daysDiffExpr('ordered_at', 'lag(ordered_at) OVER (PARTITION BY customer_id ORDER BY ordered_at)');
+
+            $gaps = DB::select("
                 SELECT
                     customer_id,
-                    julianday(ordered_at) - julianday(lag(ordered_at) OVER (PARTITION BY customer_id ORDER BY ordered_at)) as days_gap
+                    {$daysDiff} as days_gap
                 FROM shopify_orders
                 WHERE customer_id IS NOT NULL
                 ORDER BY customer_id, ordered_at
-            SQL);
+            ");
 
             $secondOrderGaps = collect($gaps)
                 ->filter(fn ($row) => $row->days_gap !== null && $row->days_gap > 0)
@@ -381,7 +407,7 @@ class DashboardService
             $data = ShopifyOrder::query()
                 ->where('ordered_at', '>=', $since)
                 ->join('shopify_customers', 'shopify_orders.customer_id', '=', 'shopify_customers.id')
-                ->selectRaw("strftime('%Y-%m', shopify_orders.ordered_at) as month")
+                ->selectRaw("{$this->yearMonthExpr('shopify_orders.ordered_at')} as month")
                 ->selectRaw('avg(case when shopify_customers.orders_count <= 1 then (shopify_orders.total_price - shopify_orders.tax) end) as first_aov')
                 ->selectRaw('avg(case when shopify_customers.orders_count > 1 then (shopify_orders.total_price - shopify_orders.tax) end) as returning_aov')
                 ->groupBy('month')
