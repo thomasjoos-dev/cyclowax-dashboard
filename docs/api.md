@@ -57,6 +57,56 @@ Renders the main dashboard page via Inertia.
 
 ---
 
+## REST API (v1)
+
+Base URL: `/api/v1/`
+Auth: Currently unauthenticated (Sanctum planned for external access)
+
+### `GET /api/v1/dashboard?period=mtd|qtd|ytd`
+Returns all dashboard metrics as JSON. Same data as the Inertia dashboard but as a single JSON response.
+
+### `GET /api/v1/orders`
+Paginated order list with customer and line items included.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `from` | date | Filter orders from this date |
+| `to` | date | Filter orders until this date |
+| `country_code` | string | Filter by country (e.g. `DE`) |
+| `financial_status` | string | Filter by status (e.g. `PAID`) |
+| `per_page` | int | Items per page (default: 50) |
+
+### `GET /api/v1/orders/{id}`
+Single order with customer and line items.
+
+### `GET /api/v1/customers`
+Paginated customer list.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `from` | date | Filter by first_order_at from |
+| `to` | date | Filter by first_order_at until |
+| `country_code` | string | Filter by country |
+| `min_orders` | int | Minimum order count |
+| `per_page` | int | Items per page (default: 50) |
+
+### `GET /api/v1/customers/{id}`
+Single customer.
+
+### `GET /api/v1/products`
+Paginated product list.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `status` | string | Filter by status (e.g. `active`) |
+| `product_type` | string | Filter by product type |
+| `per_page` | int | Items per page (default: 50) |
+
+### `GET /api/v1/products/{id}`
+Single product.
+
+---
+
 ## Artisan Commands
 
 ### `shopify:test`
