@@ -375,18 +375,15 @@
 
     {{-- Footer --}}
     <div class="footer">
-        @if(isset($quote))
-            <div class="footer-quote">{{ $quote }}</div>
-        @endif
         <table class="footer-meta" style="border: none; margin: 0; width: 100%;">
             <tr>
-                <td style="border: none; padding: 0; width: 33%; color: #cccccc; text-align: left;">
+                <td style="border: none; padding: 0; width: 30%; color: #cccccc; text-align: left;">
                     {{ $title }}
                 </td>
-                <td style="border: none; padding: 0; width: 34%; color: #cccccc; text-align: center;">
-                    Cyclowax
+                <td style="border: none; padding: 0; width: 40%; color: #bbbbbb; text-align: center; font-style: italic; font-size: 8pt;">
+                    {{ $quote ?? '' }}
                 </td>
-                <td style="border: none; padding: 0; width: 33%; color: #cccccc; text-align: right;">
+                <td style="border: none; padding: 0; width: 30%; color: #cccccc; text-align: right;">
                     {{ $date ?? now()->format('d M Y') }}
                 </td>
             </tr>
