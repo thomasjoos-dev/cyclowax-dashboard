@@ -10,6 +10,7 @@
 | Charts | Recharts |
 | Database | SQLite (local), migreerbaar naar MySQL/PostgreSQL |
 | Shopify | GraphQL Admin API (2025-04), custom client |
+| Odoo | JSON-RPC External API, custom client |
 
 ## Lagen
 
@@ -29,6 +30,10 @@ Shopify Sync
         └── ShopifyOrderSyncer (sync logic)
               └── ShopifyClient (GraphQL HTTP client)
                     └── Shopify Admin API
+
+Odoo Sync
+  └── OdooClient (JSON-RPC HTTP client)
+        └── Odoo External API (product.product, stock.quant)
 ```
 
 ## Dataflow

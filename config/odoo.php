@@ -1,0 +1,8 @@
+<?php
+
+return [
+    'url' => env('ODOO_URL'),
+    'database' => env('ODOO_DATABASE'),
+    'username' => env('ODOO_USERNAME'),
+    'api_key' => env('ODOO_API_KEY'),
+];

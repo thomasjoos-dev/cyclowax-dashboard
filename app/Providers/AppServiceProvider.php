@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\OdooClient;
 use App\Services\ShopifyClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
@@ -17,6 +18,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(ShopifyClient::class);
+        $this->app->singleton(OdooClient::class);
     }
 
     /**

@@ -28,6 +28,39 @@ Stream and parse JSONL results from a completed bulk operation. Yields rows one 
 
 ---
 
+## Odoo External API
+
+### Connection
+- **Endpoint:** `{ODOO_URL}/jsonrpc` (JSON-RPC 2.0)
+- **Auth:** Authenticate with database + username + API key → returns `uid`
+- **Client:** `App\Services\OdooClient`
+
+### Methods
+
+#### `authenticate(): int`
+Authenticate with Odoo. Returns user ID (uid). Cached for instance lifetime.
+
+#### `execute(string $model, string $method, array $args, array $kwargs): mixed`
+Generic wrapper for Odoo's `execute_kw`. Authenticates automatically on first call.
+
+#### `searchRead(string $model, array $domain, array $fields, int $limit, int $offset): array`
+Convenience method for `search_read`. Returns array of records matching the domain filter.
+
+#### `searchCount(string $model, array $domain): int`
+Count records matching a domain filter.
+
+### Error Handling
+- JSON-RPC errors throw `RuntimeException` with Odoo error message
+- HTTP 5xx triggers retry (max 3 attempts, exponential backoff)
+- Connection failures logged with attempt context
+
+### Relevant Odoo Models
+- `product.product` — variants with `default_code` (SKU), `standard_price` (COGS), `qty_available` (stock)
+- `product.template` — product templates (parent of variants)
+- `stock.quant` — detailed stock per warehouse location
+
+---
+
 ## Dashboard Controller
 
 ### `GET /dashboard`
@@ -131,3 +164,6 @@ Sync orders from Shopify. Defaults to last 3 days.
 
 ### `shopify:auth`
 One-time OAuth flow to obtain an access token. Opens authorize URL, user pastes callback URL, exchanges code for token.
+
+### `odoo:test`
+Test the Odoo API connection. Authenticates, fetches sample products with SKU/COGS/stock, and displays total product count.
