@@ -21,6 +21,7 @@ class ComputeOrderMarginsCommand extends Command
         $this->linkLineItems();
         $this->computeOrderMargins();
         $this->classifyFirstOrders();
+        $this->classifyChannelTypes();
         $this->updateCustomerAggregates();
 
         return self::SUCCESS;
@@ -213,6 +214,97 @@ class ComputeOrderMarginsCommand extends Command
         $this->info("  Classified: {$classified} orders");
     }
 
+    protected function classifyChannelTypes(): void
+    {
+        $this->info('Classifying channel types...');
+
+        $classified = 0;
+
+        ShopifyOrder::query()
+            ->whereNull('channel_type')
+            ->chunkById(1000, function ($orders) use (&$classified) {
+                foreach ($orders as $order) {
+                    $channelType = $this->deriveChannelType($order);
+
+                    if ($channelType) {
+                        $order->update(['channel_type' => $channelType]);
+                        $classified++;
+                    }
+                }
+            });
+
+        $this->info("  Classified: {$classified} orders");
+    }
+
+    protected function deriveChannelType(ShopifyOrder $order): ?string
+    {
+        $source = $order->ft_source;
+        $sourceType = $order->ft_source_type;
+        $utmMedium = $order->ft_utm_medium ? mb_strtolower($order->ft_utm_medium) : null;
+        $sourceName = $order->source_name;
+
+        // No tracking data at all
+        if (! $source && ! $sourceName) {
+            return null;
+        }
+
+        // Draft orders, POS, partner channels
+        if (in_array($sourceName, ['shopify_draft_order', 'pos'])) {
+            return $sourceName === 'pos' ? 'pos' : 'manual';
+        }
+
+        // No first-touch source but is a web order
+        if (! $source) {
+            return 'unknown';
+        }
+
+        // UTM medium overrides — most reliable signal
+        if ($utmMedium === 'cpc') {
+            return 'paid_search';
+        }
+
+        if (in_array($utmMedium, ['social', 'paid', 'paidsocial'])) {
+            return 'paid_social';
+        }
+
+        if ($utmMedium === 'email') {
+            return 'email';
+        }
+
+        if ($utmMedium === 'product_sync') {
+            return 'shopping_free';
+        }
+
+        // Source type from Shopify
+        if ($sourceType === 'SEO') {
+            return 'organic_search';
+        }
+
+        // Classify by source name
+        if ($source === 'direct') {
+            return 'direct';
+        }
+
+        if (in_array($source, ['Google', 'Bing', 'DuckDuckGo', 'Yahoo'])) {
+            return 'organic_search';
+        }
+
+        if (in_array($source, ['Instagram', 'Facebook'])) {
+            return 'organic_social';
+        }
+
+        if ($source === 'email') {
+            return 'email';
+        }
+
+        // URLs as source = referral
+        if (str_starts_with($source, 'http') || str_starts_with($source, 'android-app://')) {
+            return 'referral';
+        }
+
+        return 'other';
+    }
+
     protected function updateCustomerAggregates(): void
     {
         $this->info('Updating customer aggregates...');
@@ -230,7 +322,7 @@ class ComputeOrderMarginsCommand extends Command
                     $firstOrderChannel = ShopifyOrder::query()
                         ->where('customer_id', $customer->id)
                         ->where('is_first_order', true)
-                        ->value('ft_source');
+                        ->value('channel_type');
 
                     $customer->update([
                         'local_orders_count' => $stats->order_count,

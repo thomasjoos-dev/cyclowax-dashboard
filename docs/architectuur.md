@@ -106,6 +106,7 @@ ShopifyOrder
   ├── net_revenue (total_price - tax - refunded)
   ├── total_cost (COGS), payment_fee, shipping_cost, shipping_margin, shipping_carrier
   ├── gross_margin (net_revenue - COGS - fee - shipping_cost), is_first_order
+  ├── channel_type (afgeleid: organic_search, paid_search, direct, email, etc.)
   ├── discount_codes (comma-separated)
   ├── billing_country_code, billing_province_code, billing_postal_code
   ├── shipping_country_code, shipping_province_code, shipping_postal_code
