@@ -258,7 +258,16 @@ class ComputeOrderMarginsCommand extends Command
             return 'unknown';
         }
 
-        // UTM medium overrides — most reliable signal
+        // UTM-based classification — most reliable signal
+        $utmSource = $order->ft_utm_source ? mb_strtolower($order->ft_utm_source) : null;
+        $isSocialSource = in_array($utmSource, ['ig', 'fb', 'facebook', 'instagram'])
+            || str_starts_with($utmSource ?? '', 'instagram_')
+            || str_starts_with($utmSource ?? '', 'facebook_');
+
+        if ($utmMedium === 'cpc' && $isSocialSource) {
+            return 'paid_social';
+        }
+
         if ($utmMedium === 'cpc') {
             return 'paid_search';
         }
