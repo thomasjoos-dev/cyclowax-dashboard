@@ -163,7 +163,8 @@ De API Resource groepeert attributie onder een `attribution` object met `first_t
 - **Net revenue** = `total_price - tax - refunded` (opgeslagen als `net_revenue` kolom)
 - **CM1 (gross margin)** = `net_revenue - total_cost - payment_fee - shipping_cost`
 - **Payment fee** = `total_price × 1.9% + €0.25` (configureerbaar via `config/fees.php`)
-- **COGS** = som van line item `cost_price × quantity` (frozen snapshot uit Odoo)
+- **COGS** = som van line item `cost_price × quantity` (frozen snapshot uit Odoo, 97,8% coverage)
+- Line items worden gematcht via: SKU → barcode → SKU alias (`config/sku-aliases.php`) → product title (`config/title-product-map.php`)
 - **Shipping cost** = exacte carrier_price uit Odoo, of geschatte kost via `config/shipping-rates.php`
 - **Shipping margin** = `shipping` (klant betaalt) - `shipping_cost` (onze kost)
 

@@ -28,22 +28,21 @@ class ComputeOrderMarginsCommand extends Command
 
     protected function linkLineItems(): void
     {
-        $this->info('Linking line items to products via SKU...');
+        $this->info('Linking line items to products...');
 
-        $productMap = Product::query()
-            ->pluck('id', 'sku')
-            ->toArray();
+        $products = Product::all();
+        $skuMap = $products->pluck('id', 'sku')->toArray();
+        $barcodeMap = $products->pluck('id', 'barcode')->filter()->toArray();
+        $skuAliases = config('sku-aliases', []);
+        $titleMap = config('title-product-map', []);
 
-        $linked = 0;
-        $costSet = 0;
+        $stats = ['sku' => 0, 'barcode' => 0, 'alias' => 0, 'title' => 0, 'cost' => 0];
 
         ShopifyLineItem::query()
             ->whereNull('product_id')
-            ->whereNotNull('sku')
-            ->where('sku', '!=', '')
-            ->chunkById(1000, function ($lineItems) use ($productMap, &$linked, &$costSet) {
+            ->chunkById(1000, function ($lineItems) use ($skuMap, $barcodeMap, $skuAliases, $titleMap, &$stats) {
                 foreach ($lineItems as $lineItem) {
-                    $productId = $productMap[$lineItem->sku] ?? null;
+                    $productId = $this->resolveProductId($lineItem, $skuMap, $barcodeMap, $skuAliases, $titleMap, $stats);
 
                     if ($productId) {
                         $updates = ['product_id' => $productId];
@@ -53,17 +52,77 @@ class ComputeOrderMarginsCommand extends Command
 
                             if ($costPrice) {
                                 $updates['cost_price'] = $costPrice;
-                                $costSet++;
+                                $stats['cost']++;
                             }
                         }
 
                         $lineItem->update($updates);
-                        $linked++;
                     }
                 }
             });
 
-        $this->info("  Linked: {$linked} line items, COGS set: {$costSet}");
+        $total = array_sum($stats) - $stats['cost'];
+        $this->info("  Linked: {$total} (SKU: {$stats['sku']}, barcode: {$stats['barcode']}, alias: {$stats['alias']}, title: {$stats['title']}), COGS set: {$stats['cost']}");
+    }
+
+    /**
+     * Try to resolve a product ID using multiple matching strategies.
+     *
+     * @param  array<string, int>  $skuMap
+     * @param  array<string, int>  $barcodeMap
+     * @param  array<string, string>  $skuAliases
+     * @param  array<string, string>  $titleMap
+     * @param  array<string, int>  $stats
+     */
+    protected function resolveProductId(
+        ShopifyLineItem $lineItem,
+        array $skuMap,
+        array $barcodeMap,
+        array $skuAliases,
+        array $titleMap,
+        array &$stats,
+    ): ?int {
+        $sku = $lineItem->sku ? trim($lineItem->sku) : '';
+
+        if ($sku !== '') {
+            // 1. Direct SKU match
+            if (isset($skuMap[$sku])) {
+                $stats['sku']++;
+
+                return $skuMap[$sku];
+            }
+
+            // 2. Barcode match (EAN as SKU)
+            $stripped = ltrim($sku, '0');
+            $productId = $barcodeMap[$sku] ?? $barcodeMap[$stripped] ?? $barcodeMap['0'.$sku] ?? null;
+
+            if ($productId) {
+                $stats['barcode']++;
+
+                return $productId;
+            }
+
+            // 3. SKU alias (legacy numeric SKUs)
+            $aliasedSku = $skuAliases[$sku] ?? null;
+
+            if ($aliasedSku && isset($skuMap[$aliasedSku])) {
+                $stats['alias']++;
+
+                return $skuMap[$aliasedSku];
+            }
+        }
+
+        // 4. Product title match
+        $title = $lineItem->product_title ? mb_strtolower(trim($lineItem->product_title)) : '';
+        $mappedSku = $titleMap[$title] ?? null;
+
+        if ($mappedSku && isset($skuMap[$mappedSku])) {
+            $stats['title']++;
+
+            return $skuMap[$mappedSku];
+        }
+
+        return null;
     }
 
     protected function computeOrderMargins(): void
