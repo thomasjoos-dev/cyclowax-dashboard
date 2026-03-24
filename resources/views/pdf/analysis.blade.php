@@ -360,7 +360,7 @@
             </table>
 
         @elseif($section['type'] === 'list')
-            <div class="avoid-break">
+            <div class="analysis-card avoid-break">
                 <ul>
                     @foreach($section['items'] as $item)
                         <li>{!! $item !!}</li>
