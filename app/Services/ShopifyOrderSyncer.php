@@ -99,6 +99,25 @@ class ShopifyOrderSyncer
                                 displayFulfillmentStatus
                                 billingAddress { countryCodeV2 provinceCode zip }
                                 shippingAddress { countryCodeV2 provinceCode zip }
+                                landingPageUrl
+                                referrerUrl
+                                sourceName
+                                customerJourneySummary {
+                                    firstVisit {
+                                        source
+                                        sourceType
+                                        landingPage
+                                        referrerUrl
+                                        utmParameters { source medium campaign content term }
+                                    }
+                                    lastVisit {
+                                        source
+                                        sourceType
+                                        landingPage
+                                        referrerUrl
+                                        utmParameters { source medium campaign content term }
+                                    }
+                                }
                                 customer {
                                     id
                                     email
@@ -158,6 +177,25 @@ class ShopifyOrderSyncer
                             displayFulfillmentStatus
                             billingAddress { countryCodeV2 provinceCode zip }
                             shippingAddress { countryCodeV2 provinceCode zip }
+                            landingPageUrl
+                            referrerUrl
+                            sourceName
+                            customerJourneySummary {
+                                firstVisit {
+                                    source
+                                    sourceType
+                                    landingPage
+                                    referrerUrl
+                                    utmParameters { source medium campaign content term }
+                                }
+                                lastVisit {
+                                    source
+                                    sourceType
+                                    landingPage
+                                    referrerUrl
+                                    utmParameters { source medium campaign content term }
+                                }
+                            }
                             customer {
                                 id
                                 email
@@ -305,6 +343,30 @@ class ShopifyOrderSyncer
                     'shipping_province_code' => $data['shippingAddress']['provinceCode'] ?? null,
                     'shipping_postal_code' => $data['shippingAddress']['zip'] ?? null,
                     'currency' => $data['totalPriceSet']['shopMoney']['currencyCode'],
+                    // Attribution
+                    'landing_page_url' => $data['landingPageUrl'] ?? null,
+                    'referrer_url' => $data['referrerUrl'] ?? null,
+                    'source_name' => $data['sourceName'] ?? null,
+                    // First-touch
+                    'ft_source' => $data['customerJourneySummary']['firstVisit']['source'] ?? null,
+                    'ft_source_type' => $data['customerJourneySummary']['firstVisit']['sourceType'] ?? null,
+                    'ft_utm_source' => $data['customerJourneySummary']['firstVisit']['utmParameters']['source'] ?? null,
+                    'ft_utm_medium' => $data['customerJourneySummary']['firstVisit']['utmParameters']['medium'] ?? null,
+                    'ft_utm_campaign' => $data['customerJourneySummary']['firstVisit']['utmParameters']['campaign'] ?? null,
+                    'ft_utm_content' => $data['customerJourneySummary']['firstVisit']['utmParameters']['content'] ?? null,
+                    'ft_utm_term' => $data['customerJourneySummary']['firstVisit']['utmParameters']['term'] ?? null,
+                    'ft_landing_page' => $data['customerJourneySummary']['firstVisit']['landingPage'] ?? null,
+                    'ft_referrer_url' => $data['customerJourneySummary']['firstVisit']['referrerUrl'] ?? null,
+                    // Last-touch
+                    'lt_source' => $data['customerJourneySummary']['lastVisit']['source'] ?? null,
+                    'lt_source_type' => $data['customerJourneySummary']['lastVisit']['sourceType'] ?? null,
+                    'lt_utm_source' => $data['customerJourneySummary']['lastVisit']['utmParameters']['source'] ?? null,
+                    'lt_utm_medium' => $data['customerJourneySummary']['lastVisit']['utmParameters']['medium'] ?? null,
+                    'lt_utm_campaign' => $data['customerJourneySummary']['lastVisit']['utmParameters']['campaign'] ?? null,
+                    'lt_utm_content' => $data['customerJourneySummary']['lastVisit']['utmParameters']['content'] ?? null,
+                    'lt_utm_term' => $data['customerJourneySummary']['lastVisit']['utmParameters']['term'] ?? null,
+                    'lt_landing_page' => $data['customerJourneySummary']['lastVisit']['landingPage'] ?? null,
+                    'lt_referrer_url' => $data['customerJourneySummary']['lastVisit']['referrerUrl'] ?? null,
                 ]
             );
 
