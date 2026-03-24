@@ -158,9 +158,6 @@ Sync orders from Shopify. Defaults to last 3 days.
 - Upserts orders, line items and customers
 - Fetches postal codes and resolves province codes for EU countries via `PostalProvinceResolver`
 - Syncs first-touch/last-touch attribution from `customerJourneySummary`
-- Flushes dashboard cache after sync
-
-**Scheduled:** Daily at 06:00 via `routes/console.php`
 
 ### `shopify:auth`
 One-time OAuth flow to obtain an access token. Opens authorize URL, user pastes callback URL, exchanges code for token.

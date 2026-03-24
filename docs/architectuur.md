@@ -48,16 +48,26 @@ Margin Computation
 
 ## Dataflow
 
-### Sync (dagelijks 06:00 + handmatig)
-1. `shopify:sync-orders` command start
-2. `ShopifyOrderSyncer` telt orders in date range
-3. <1000: cursor-based pagination (50/page)
-4. >1000: Bulk Operations API (JSONL download)
-5. Per order: upsert customer → upsert order → replace line items
-6. Province codes resolved via `PostalProvinceResolver` voor EU-landen zonder Shopify province data
-7. Attribution data (first/last-touch) opgeslagen vanuit `customerJourneySummary`
-8. Customer `first_order_at` / `last_order_at` berekend uit orders
-7. Dashboard cache geflusht
+### Sync pipeline (dagelijks 06:00 via `sync:all`)
+1. **Shopify orders** (`shopify:sync-orders`)
+   - `ShopifyOrderSyncer` telt orders in date range
+   - <1000: cursor-based pagination (50/page)
+   - \>1000: Bulk Operations API (JSONL download)
+   - Per order: upsert customer → upsert order → replace line items
+   - Province codes resolved via `PostalProvinceResolver`
+   - Attribution data (first/last-touch) opgeslagen vanuit `customerJourneySummary`
+   - Customer `first_order_at` / `last_order_at` berekend uit orders
+2. **Odoo products** (`odoo:sync-products`)
+   - Products tabel updaten (COGS, categorie, barcode, gewicht)
+   - Stock snapshot vastleggen (qty_on_hand, qty_forecasted, qty_free)
+   - Product types verrijken vanuit Shopify line items
+3. **Margin computation** (`orders:compute-margins`)
+   - Line items linken aan products via SKU
+   - COGS snapshot op line items zetten
+   - total_cost + gross_margin op orders berekenen
+   - is_first_order classificeren
+   - Customer aggregates updaten
+4. **Dashboard cache flush**
 
 ### Dashboard request
 1. `GET /dashboard?period=mtd` → `DashboardController`
@@ -146,7 +156,7 @@ Alle omzetcijfers zijn **netto** (excl. BTW): `total_price - tax`. Dit geldt voo
 ## Caching strategie
 - Elke `DashboardService` methode cached apart met unieke key
 - TTL: 3600 seconden (1 uur)
-- Cache flush: automatisch na `shopify:sync-orders`
+- Cache flush: automatisch na `sync:all` pipeline
 - Cache driver: database (configureerbaar via `CACHE_STORE`)
 
 ## Shopify authenticatie
