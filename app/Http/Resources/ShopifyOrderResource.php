@@ -23,7 +23,7 @@ class ShopifyOrderResource extends JsonResource
             'tax' => (float) $this->tax,
             'discounts' => (float) $this->discounts,
             'refunded' => (float) $this->refunded,
-            'net_revenue' => (float) ($this->total_price - $this->tax),
+            'net_revenue' => (float) ($this->total_price - $this->tax - $this->refunded),
             'financial_status' => $this->financial_status,
             'fulfillment_status' => $this->fulfillment_status,
             'billing_country_code' => $this->billing_country_code,
