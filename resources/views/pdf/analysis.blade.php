@@ -218,19 +218,17 @@
             bottom: 0;
             left: 0;
             right: 0;
-            padding: 0 100px 8px 100px;
+            padding: 0 100px 24px 100px;
             font-size: 7.5pt;
             color: #cccccc;
+            text-align: center;
         }
 
         .footer-quote {
-            text-align: center;
             font-style: italic;
             font-size: 8pt;
             color: #bbbbbb;
-            padding-bottom: 10px;
-            margin-bottom: 8px;
-            border-bottom: 1px solid #e8e8e8;
+            margin-bottom: 6px;
         }
 
         .footer-meta {
@@ -382,10 +380,13 @@
         @endif
         <table class="footer-meta" style="border: none; margin: 0; width: 100%;">
             <tr>
-                <td style="border: none; padding: 0; width: 50%; color: #cccccc;">
-                    Cyclowax — Intern document
+                <td style="border: none; padding: 0; width: 33%; color: #cccccc; text-align: left;">
+                    {{ $title }}
                 </td>
-                <td style="border: none; padding: 0; width: 50%; text-align: right; color: #cccccc;">
+                <td style="border: none; padding: 0; width: 34%; color: #cccccc; text-align: center;">
+                    Cyclowax
+                </td>
+                <td style="border: none; padding: 0; width: 33%; color: #cccccc; text-align: right;">
                     {{ $date ?? now()->format('d M Y') }}
                 </td>
             </tr>
