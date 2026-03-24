@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Services\DashboardService;
 use App\Services\ShopifyOrderSyncer;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Attributes\Description;
@@ -33,9 +32,6 @@ class ShopifySyncOrdersCommand extends Command
             $count = $syncer->sync($from, $to);
 
             $this->components->info("Synced {$count} orders.");
-
-            app(DashboardService::class)->flushCache();
-            $this->components->info('Dashboard cache flushed.');
 
             return self::SUCCESS;
         } catch (Throwable $e) {

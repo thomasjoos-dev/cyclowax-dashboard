@@ -173,3 +173,8 @@ Sync products from Odoo: COGS, stock quantities, categories, barcodes. Records d
 
 ### `orders:compute-margins`
 Post-sync computation: links line items to products via SKU, sets COGS snapshots, computes order-level margins (total_cost, gross_margin), classifies first orders, updates customer aggregates.
+
+### `sync:all`
+Full daily pipeline orchestrator. Runs in sequence: `shopify:sync-orders` → `odoo:sync-products` → `orders:compute-margins` → cache flush. Each step logs duration. Failures are logged but don't block subsequent steps.
+
+**Scheduled:** Daily at 06:00 via `routes/console.php`
