@@ -33,6 +33,11 @@ class ShopifyOrderResource extends JsonResource
             'shipping_province_code' => $this->shipping_province_code,
             'shipping_postal_code' => $this->shipping_postal_code,
             'currency' => $this->currency,
+            'discount_codes' => $this->discount_codes,
+            'total_cost' => $this->total_cost ? (float) $this->total_cost : null,
+            'payment_fee' => $this->payment_fee ? (float) $this->payment_fee : null,
+            'gross_margin' => $this->gross_margin ? (float) $this->gross_margin : null,
+            'is_first_order' => $this->is_first_order,
             'attribution' => [
                 'source_name' => $this->source_name,
                 'landing_page_url' => $this->landing_page_url,

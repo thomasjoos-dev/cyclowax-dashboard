@@ -67,30 +67,35 @@ class ComputeOrderMarginsCommand extends Command
 
     protected function computeOrderMargins(): void
     {
-        $this->info('Computing order margins...');
+        $this->info('Computing order margins and payment fees...');
+
+        $feePercentage = config('fees.payment.percentage', 1.9) / 100;
+        $feeFixed = config('fees.payment.fixed', 0.25);
 
         $computed = 0;
 
         ShopifyOrder::query()
-            ->whereNull('total_cost')
-            ->whereHas('lineItems', fn ($q) => $q->whereNotNull('cost_price'))
-            ->chunkById(500, function ($orders) use (&$computed) {
+            ->where(fn ($q) => $q->whereNull('total_cost')->orWhereNull('payment_fee'))
+            ->chunkById(500, function ($orders) use (&$computed, $feePercentage, $feeFixed) {
                 foreach ($orders as $order) {
                     $totalCost = $order->lineItems()
                         ->whereNotNull('cost_price')
                         ->selectRaw('SUM(cost_price * quantity) as total')
                         ->value('total') ?? 0;
 
+                    $paymentFee = round($order->total_price * $feePercentage + $feeFixed, 2);
+
                     $order->update([
                         'total_cost' => $totalCost,
-                        'gross_margin' => $order->subtotal - $totalCost,
+                        'payment_fee' => $paymentFee,
+                        'gross_margin' => $order->subtotal - $totalCost - $paymentFee,
                     ]);
 
                     $computed++;
                 }
             });
 
-        $this->info("  Orders with margin: {$computed}");
+        $this->info("  Orders computed: {$computed}");
     }
 
     protected function classifyFirstOrders(): void

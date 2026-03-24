@@ -147,7 +147,8 @@ ShopifyOrder
   ├── id, shopify_id, name, ordered_at
   ├── total_price, subtotal, shipping, tax, discounts, refunded
   ├── financial_status, fulfillment_status, currency
-  ├── total_cost (COGS), gross_margin (subtotal - COGS), is_first_order
+  ├── total_cost (COGS), payment_fee, gross_margin (subtotal - COGS - fee), is_first_order
+  ├── discount_codes (comma-separated)
   ├── billing_country_code, billing_province_code, billing_postal_code
   ├── shipping_country_code, shipping_province_code, shipping_postal_code
   ├── landing_page_url, referrer_url, source_name
@@ -163,7 +164,12 @@ ShopifyLineItem
   ├── product_title, product_type, sku, quantity, price
   ├── cost_price (COGS snapshot op moment van order)
   ├── belongsTo → ShopifyOrder
-  └── belongsTo → Product`}
+  └── belongsTo → Product
+
+AdSpendRecord (tabel klaar, import command volgt)
+  ├── period, channel, country_code, campaign_name
+  ├── spend, impressions, clicks, conversions, notes
+  └── imported_at`}
                     </DocsCode>
                 </DocsSection>
 
@@ -193,6 +199,18 @@ app/Services/PostalProvinceResolver.php — resolve(countryCode, postalCode): ?s
                         ]}
                     />
                     <DocsText>Coverage: 83% heeft source data, 23% heeft UTM parameters (paid traffic).</DocsText>
+                </DocsSection>
+
+                <DocsSection title="Contribution Margin berekening">
+                    <DocsTable
+                        headers={['Metric', 'Formule']}
+                        rows={[
+                            ['Net revenue', 'total_price - tax'],
+                            ['CM1 (gross margin)', 'subtotal - total_cost - payment_fee'],
+                            ['Payment fee', 'total_price × 1.9% + €0.25 (config/fees.php)'],
+                            ['COGS', 'SUM(line_item.cost_price × quantity)'],
+                        ]}
+                    />
                 </DocsSection>
 
                 <DocsSection title="Revenue berekening">

@@ -103,7 +103,8 @@ ShopifyOrder
   ├── id, shopify_id, name, ordered_at
   ├── total_price, subtotal, shipping, tax, discounts, refunded
   ├── financial_status, fulfillment_status, currency
-  ├── total_cost (COGS), gross_margin (subtotal - COGS), is_first_order
+  ├── total_cost (COGS), payment_fee, gross_margin (subtotal - COGS - fee), is_first_order
+  ├── discount_codes (comma-separated)
   ├── billing_country_code, billing_province_code, billing_postal_code
   ├── shipping_country_code, shipping_province_code, shipping_postal_code
   ├── landing_page_url, referrer_url, source_name
@@ -122,6 +123,11 @@ ShopifyLineItem
 
 ShopifyProduct
   └── id, shopify_id, title, product_type, status
+
+AdSpendRecord (toekomstig — tabel klaar, import command volgt)
+  ├── period, channel, country_code, campaign_name
+  ├── spend, impressions, clicks, conversions, notes
+  └── imported_at
 ```
 
 ## Postcode → Province Mapping
@@ -149,6 +155,13 @@ Orders bevatten first-touch (ft_) en last-touch (lt_) attribution vanuit Shopify
 **Coverage:** 83% heeft source data, 23% heeft UTM parameters (paid traffic).
 
 De API Resource groepeert attributie onder een `attribution` object met `first_touch` en `last_touch` sub-objecten.
+
+## Contribution Margin berekening
+
+- **Net revenue** = `total_price - tax`
+- **CM1 (gross margin)** = `subtotal - total_cost - payment_fee`
+- **Payment fee** = `total_price × 1.9% + €0.25` (configureerbaar via `config/fees.php`)
+- **COGS** = som van line item `cost_price × quantity` (frozen snapshot uit Odoo)
 
 ## Revenue berekening
 Alle omzetcijfers zijn **netto** (excl. BTW): `total_price - tax`. Dit geldt voor KPI omzet, revenue split, en AOV trend.

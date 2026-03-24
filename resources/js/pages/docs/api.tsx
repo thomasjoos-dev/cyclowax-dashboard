@@ -140,7 +140,9 @@ export default function DocsApi() {
                             />
                             <DocsText className="mt-2">
                                 Order resource includes: financial fields, address fields (billing/shipping country, province, postal code),
-                                nested <DocsBadge>attribution</DocsBadge> object with source_name, landing_page_url, referrer_url,
+                                <DocsBadge>discount_codes</DocsBadge>, <DocsBadge>total_cost</DocsBadge> (COGS),{' '}
+                                <DocsBadge>payment_fee</DocsBadge>, <DocsBadge>gross_margin</DocsBadge>, <DocsBadge>is_first_order</DocsBadge>,
+                                and nested <DocsBadge>attribution</DocsBadge> object with source_name, landing_page_url, referrer_url,
                                 first_touch and last_touch (source, source_type, UTM params, landing page, referrer).
                             </DocsText>
                         </div>

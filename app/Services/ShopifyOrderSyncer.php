@@ -97,6 +97,7 @@ class ShopifyOrderSyncer
                                 totalRefundedSet { shopMoney { amount } }
                                 displayFinancialStatus
                                 displayFulfillmentStatus
+                                discountCodes
                                 billingAddress { countryCodeV2 provinceCode zip }
                                 shippingAddress { countryCodeV2 provinceCode zip }
                                 landingPageUrl
@@ -175,6 +176,7 @@ class ShopifyOrderSyncer
                             totalRefundedSet { shopMoney { amount } }
                             displayFinancialStatus
                             displayFulfillmentStatus
+                            discountCodes
                             billingAddress { countryCodeV2 provinceCode zip }
                             shippingAddress { countryCodeV2 provinceCode zip }
                             landingPageUrl
@@ -343,6 +345,7 @@ class ShopifyOrderSyncer
                     'shipping_province_code' => $data['shippingAddress']['provinceCode'] ?? null,
                     'shipping_postal_code' => $data['shippingAddress']['zip'] ?? null,
                     'currency' => $data['totalPriceSet']['shopMoney']['currencyCode'],
+                    'discount_codes' => ! empty($data['discountCodes']) ? implode(',', $data['discountCodes']) : null,
                     // Attribution
                     'landing_page_url' => $data['landingPageUrl'] ?? null,
                     'referrer_url' => $data['referrerUrl'] ?? null,
