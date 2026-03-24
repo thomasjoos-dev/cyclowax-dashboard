@@ -11,8 +11,8 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
-#[Signature('orders:compute-margins')]
-#[Description('Link line items to products, compute COGS/margin per order, and classify first orders')]
+#[Signature('orders:compute-margins {--full : Recompute all orders, not just new ones}')]
+#[Description('Link line items to products, compute net revenue/COGS/margin per order, and classify first orders')]
 class ComputeOrderMarginsCommand extends Command
 {
     public function handle(): int
@@ -67,39 +67,41 @@ class ComputeOrderMarginsCommand extends Command
 
     protected function computeOrderMargins(): void
     {
-        $this->info('Computing order margins and payment fees...');
+        $full = $this->option('full');
+        $this->info($full ? 'Recomputing ALL order margins...' : 'Computing margins for new orders...');
 
         $feePercentage = config('fees.payment.percentage', 1.9) / 100;
         $feeFixed = config('fees.payment.fixed', 0.25);
 
         $computed = 0;
 
-        // Reset all margins for recalculation with correct formula
-        ShopifyOrder::query()->update(['total_cost' => null, 'payment_fee' => null, 'gross_margin' => null]);
+        $query = ShopifyOrder::query();
 
-        ShopifyOrder::query()
-            ->chunkById(500, function ($orders) use (&$computed, $feePercentage, $feeFixed) {
-                foreach ($orders as $order) {
-                    $totalCost = $order->lineItems()
-                        ->whereNotNull('cost_price')
-                        ->selectRaw('SUM(cost_price * quantity) as total')
-                        ->value('total') ?? 0;
+        if (! $full) {
+            // Only orders missing net_revenue (new/uncomputed)
+            $query->whereNull('net_revenue');
+        }
 
-                    $paymentFee = round($order->total_price * $feePercentage + $feeFixed, 2);
+        $query->chunkById(500, function ($orders) use (&$computed, $feePercentage, $feeFixed) {
+            foreach ($orders as $order) {
+                $totalCost = $order->lineItems()
+                    ->whereNotNull('cost_price')
+                    ->selectRaw('SUM(cost_price * quantity) as total')
+                    ->value('total') ?? 0;
 
-                    // Net revenue = total_price - tax - refunded (universeel correct)
-                    // CM1 = net_revenue - COGS - payment_fee
-                    $netRevenue = $order->total_price - $order->tax - $order->refunded;
+                $paymentFee = round($order->total_price * $feePercentage + $feeFixed, 2);
+                $netRevenue = round($order->total_price - $order->tax - $order->refunded, 2);
 
-                    $order->update([
-                        'total_cost' => $totalCost,
-                        'payment_fee' => $paymentFee,
-                        'gross_margin' => round($netRevenue - $totalCost - $paymentFee, 2),
-                    ]);
+                $order->update([
+                    'net_revenue' => $netRevenue,
+                    'total_cost' => $totalCost,
+                    'payment_fee' => $paymentFee,
+                    'gross_margin' => round($netRevenue - $totalCost - $paymentFee, 2),
+                ]);
 
-                    $computed++;
-                }
-            });
+                $computed++;
+            }
+        });
 
         $this->info("  Orders computed: {$computed}");
     }

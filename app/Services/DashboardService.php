@@ -225,8 +225,8 @@ class DashboardService
                 ->where('ordered_at', '>=', $since)
                 ->join('shopify_customers', 'shopify_orders.customer_id', '=', 'shopify_customers.id')
                 ->selectRaw("{$this->yearMonthExpr('shopify_orders.ordered_at')} as month")
-                ->selectRaw('sum(case when shopify_customers.orders_count <= 1 then (shopify_orders.total_price - shopify_orders.tax - shopify_orders.refunded) else 0 end) as new_revenue')
-                ->selectRaw('sum(case when shopify_customers.orders_count > 1 then (shopify_orders.total_price - shopify_orders.tax - shopify_orders.refunded) else 0 end) as returning_revenue')
+                ->selectRaw('sum(case when shopify_customers.orders_count <= 1 then (shopify_orders.net_revenue) else 0 end) as new_revenue')
+                ->selectRaw('sum(case when shopify_customers.orders_count > 1 then (shopify_orders.net_revenue) else 0 end) as returning_revenue')
                 ->groupBy('month')
                 ->orderBy('month')
                 ->get()
@@ -408,8 +408,8 @@ class DashboardService
                 ->where('ordered_at', '>=', $since)
                 ->join('shopify_customers', 'shopify_orders.customer_id', '=', 'shopify_customers.id')
                 ->selectRaw("{$this->yearMonthExpr('shopify_orders.ordered_at')} as month")
-                ->selectRaw('avg(case when shopify_customers.orders_count <= 1 then (shopify_orders.total_price - shopify_orders.tax - shopify_orders.refunded) end) as first_aov')
-                ->selectRaw('avg(case when shopify_customers.orders_count > 1 then (shopify_orders.total_price - shopify_orders.tax - shopify_orders.refunded) end) as returning_aov')
+                ->selectRaw('avg(case when shopify_customers.orders_count <= 1 then (shopify_orders.net_revenue) end) as first_aov')
+                ->selectRaw('avg(case when shopify_customers.orders_count > 1 then (shopify_orders.net_revenue) end) as returning_aov')
                 ->groupBy('month')
                 ->orderBy('month')
                 ->get();
@@ -525,7 +525,7 @@ class DashboardService
     {
         return (float) ShopifyOrder::query()
             ->whereBetween('ordered_at', [$from, $to])
-            ->selectRaw('sum(total_price - tax - refunded) as net_revenue')
+            ->selectRaw('sum(net_revenue) as net_revenue')
             ->value('net_revenue');
     }
 

@@ -103,6 +103,7 @@ ShopifyOrder
   ├── id, shopify_id, name, ordered_at
   ├── total_price, subtotal, shipping, tax, discounts, refunded
   ├── financial_status, fulfillment_status, currency
+  ├── net_revenue (total_price - tax - refunded)
   ├── total_cost (COGS), payment_fee, gross_margin (net_revenue - COGS - fee), is_first_order
   ├── discount_codes (comma-separated)
   ├── billing_country_code, billing_province_code, billing_postal_code
@@ -158,7 +159,7 @@ De API Resource groepeert attributie onder een `attribution` object met `first_t
 
 ## Contribution Margin berekening
 
-- **Net revenue** = `total_price - tax`
+- **Net revenue** = `total_price - tax - refunded` (opgeslagen als `net_revenue` kolom)
 - **CM1 (gross margin)** = `(total_price - tax - refunded) - total_cost - payment_fee`
 - **Payment fee** = `total_price × 1.9% + €0.25` (configureerbaar via `config/fees.php`)
 - **COGS** = som van line item `cost_price × quantity` (frozen snapshot uit Odoo)
