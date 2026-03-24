@@ -106,20 +106,35 @@ class ShopifyClient
 
     /**
      * Download and parse bulk operation results as a JSONL stream.
+     * Uses a temp file to avoid memory exhaustion on large result sets.
      *
-     * @return array<int, array<string, mixed>>
+     * @return \Generator<int, array<string, mixed>>
      */
-    public function bulkOperationResults(string $url): array
+    public function bulkOperationResults(string $url): \Generator
     {
-        $response = Http::get($url);
+        $tempFile = tempnam(sys_get_temp_dir(), 'shopify_bulk_');
 
-        if ($response->failed()) {
-            throw new RuntimeException('Failed to download bulk operation results.');
+        try {
+            $response = Http::sink($tempFile)->get($url);
+
+            if ($response->failed()) {
+                throw new RuntimeException('Failed to download bulk operation results.');
+            }
+
+            $handle = fopen($tempFile, 'r');
+
+            while (($line = fgets($handle)) !== false) {
+                $line = trim($line);
+
+                if ($line !== '') {
+                    yield json_decode($line, true);
+                }
+            }
+
+            fclose($handle);
+        } finally {
+            @unlink($tempFile);
         }
-
-        $lines = array_filter(explode("\n", trim($response->body())));
-
-        return array_map(fn (string $line) => json_decode($line, true), $lines);
     }
 
     /**

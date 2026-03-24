@@ -24,8 +24,12 @@ class OrderController extends Controller
             $query->where('ordered_at', '<=', $request->query('to'));
         }
 
-        if ($request->has('country_code')) {
-            $query->where('country_code', $request->query('country_code'));
+        if ($request->has('shipping_country')) {
+            $query->where('shipping_country_code', $request->query('shipping_country'));
+        }
+
+        if ($request->has('billing_country')) {
+            $query->where('billing_country_code', $request->query('billing_country'));
         }
 
         if ($request->has('financial_status')) {
