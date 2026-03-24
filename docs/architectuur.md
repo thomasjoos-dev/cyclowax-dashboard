@@ -32,8 +32,18 @@ Shopify Sync
                     └── Shopify Admin API
 
 Odoo Sync
-  └── OdooClient (JSON-RPC HTTP client)
-        └── Odoo External API (product.product, stock.quant)
+  └── OdooSyncProductsCommand (artisan)
+        └── OdooProductSyncer (sync + stock snapshots)
+              └── OdooClient (JSON-RPC HTTP client)
+                    └── Odoo External API (product.product)
+
+Margin Computation
+  └── ComputeOrderMarginsCommand (artisan)
+        ├── Link line items → products via SKU
+        ├── COGS snapshot op line items
+        ├── total_cost + gross_margin op orders
+        ├── is_first_order classificatie
+        └── Customer aggregates (local_orders_count, total_cost, first_order_channel)
 ```
 
 ## Dataflow
@@ -59,8 +69,23 @@ Odoo Sync
 ## Models & Relaties
 
 ```
+Product (centraal koppelpunt Shopify ↔ Odoo)
+  ├── id, sku (unique join key), name
+  ├── product_type (Shopify), category (Odoo)
+  ├── shopify_product_id, odoo_product_id
+  ├── cost_price (COGS uit Odoo), list_price, weight, barcode
+  ├── is_active, last_synced_at
+  ├── hasMany → ShopifyLineItem
+  └── hasMany → ProductStockSnapshot
+
+ProductStockSnapshot
+  ├── product_id, qty_on_hand, qty_forecasted, qty_free
+  ├── recorded_at (tijdreeks)
+  └── belongsTo → Product
+
 ShopifyCustomer
   ├── id, shopify_id, email, orders_count, total_spent
+  ├── local_orders_count (berekend), total_cost (COGS), first_order_channel
   ├── first_order_at, last_order_at, country_code
   └── hasMany → ShopifyOrder
 
@@ -68,6 +93,7 @@ ShopifyOrder
   ├── id, shopify_id, name, ordered_at
   ├── total_price, subtotal, shipping, tax, discounts, refunded
   ├── financial_status, fulfillment_status, currency
+  ├── total_cost (COGS), gross_margin (subtotal - COGS), is_first_order
   ├── billing_country_code, billing_province_code, billing_postal_code
   ├── shipping_country_code, shipping_province_code, shipping_postal_code
   ├── landing_page_url, referrer_url, source_name
@@ -79,8 +105,10 @@ ShopifyOrder
   └── hasMany → ShopifyLineItem
 
 ShopifyLineItem
-  ├── id, order_id, product_title, product_type, sku, quantity, price
-  └── belongsTo → ShopifyOrder
+  ├── id, order_id, product_id (FK → Product), product_title, product_type, sku, quantity, price
+  ├── cost_price (COGS snapshot op moment van order)
+  ├── belongsTo → ShopifyOrder
+  └── belongsTo → Product
 
 ShopifyProduct
   └── id, shopify_id, title, product_type, status

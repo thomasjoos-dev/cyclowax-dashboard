@@ -167,3 +167,9 @@ One-time OAuth flow to obtain an access token. Opens authorize URL, user pastes 
 
 ### `odoo:test`
 Test the Odoo API connection. Authenticates, fetches sample products with SKU/COGS/stock, and displays total product count.
+
+### `odoo:sync-products`
+Sync products from Odoo: COGS, stock quantities, categories, barcodes. Records daily stock snapshots. Enriches product_type from Shopify line items.
+
+### `orders:compute-margins`
+Post-sync computation: links line items to products via SKU, sets COGS snapshots, computes order-level margins (total_cost, gross_margin), classifies first orders, updates customer aggregates.
