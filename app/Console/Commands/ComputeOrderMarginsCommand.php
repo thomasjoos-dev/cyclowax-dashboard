@@ -284,6 +284,14 @@ class ComputeOrderMarginsCommand extends Command
             return 'shopping_free';
         }
 
+        // AI referrals — check ft_source and ft_utm_source
+        $isAiReferral = str_contains($source, 'chatgpt.com') || str_contains($source, 'perplexity')
+            || in_array($utmSource, ['chatgpt.com', 'perplexity', 'perplexity.ai']);
+
+        if ($isAiReferral) {
+            return 'ai_referral';
+        }
+
         // Source type from Shopify
         if ($sourceType === 'SEO') {
             return 'organic_search';
