@@ -21,12 +21,18 @@ class AnalysisPdfService
      */
     public function generate(array $data): \Barryvdh\DomPDF\PDF
     {
-        $data['logo'] = storage_path('app/logos/cyclowax_logo_pdf.png');
+        $data['logo'] = storage_path('app/visual-assets/cyclowax_logo_pdf.png');
         $data['date'] = $data['date'] ?? now()->format('d M Y');
         $data['metrics'] = $data['metrics'] ?? [];
         $data['sections'] = $data['sections'] ?? [];
 
-        return Pdf::loadView('pdf.analysis', $data);
+        $pdf = Pdf::loadView('pdf.analysis', $data);
+
+        if ($data['landscape'] ?? false) {
+            $pdf->setPaper('a4', 'landscape');
+        }
+
+        return $pdf;
     }
 
     /**
@@ -35,7 +41,7 @@ class AnalysisPdfService
     public function save(array $data, ?string $filename = null): string
     {
         $filename = $filename ?? 'analysis-'.now()->format('Y-m-d-His').'.pdf';
-        $path = storage_path('app/analyses/'.$filename);
+        $path = storage_path('app/data-analysis/drafts/'.$filename);
 
         if (! is_dir(dirname($path))) {
             mkdir(dirname($path), 0755, true);

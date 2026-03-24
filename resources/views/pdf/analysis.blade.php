@@ -267,6 +267,38 @@
             background-color: #F23036;
             color: #ffffff;
         }
+
+        /* ── Compact table (stacked values per cell) ── */
+        .compact-table {
+            font-size: 7pt;
+        }
+
+        .compact-table thead th {
+            font-size: 6.5pt;
+            padding: 4px 5px;
+            text-align: center;
+        }
+
+        .compact-table thead th:first-child {
+            text-align: left;
+        }
+
+        .compact-table tbody td {
+            padding: 3px 5px;
+            text-align: center;
+            vertical-align: top;
+            line-height: 1.35;
+        }
+
+        .compact-table tbody td:first-child {
+            text-align: left;
+            font-weight: bold;
+        }
+
+        .compact-table .cell-net {
+            font-size: 6.5pt;
+            color: #888888;
+        }
     </style>
 </head>
 <body>
@@ -353,6 +385,33 @@
                                 <td class="{{ $section['headers'][$i]['align'] ?? '' }} {{ $cell['class'] ?? '' }}">
                                     {{ $cell['value'] ?? $cell }}
                                 </td>
+                            @endforeach
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+
+        @elseif($section['type'] === 'compact-table')
+            <table class="compact-table">
+                <thead>
+                    <tr>
+                        @foreach($section['headers'] as $header)
+                            <th @if(isset($header['width'])) style="width: {{ $header['width'] }}" @endif>{{ $header['label'] }}</th>
+                        @endforeach
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($section['rows'] as $row)
+                        <tr>
+                            @foreach($row as $i => $cell)
+                                @if(is_array($cell) && isset($cell['gross']))
+                                    <td>
+                                        {{ $cell['gross'] }}<br>
+                                        <span class="cell-net">{{ $cell['net'] }}</span>
+                                    </td>
+                                @else
+                                    <td class="{{ $cell['class'] ?? '' }}">{{ $cell['value'] ?? $cell }}</td>
+                                @endif
                             @endforeach
                         </tr>
                     @endforeach
