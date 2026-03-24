@@ -118,16 +118,24 @@ class OdooProductSyncer
             ],
         );
 
-        ProductStockSnapshot::query()->create([
-            'product_id' => $product->id,
-            'qty_on_hand' => $data['qty_available'],
-            'qty_forecasted' => $data['virtual_available'],
-            'qty_free' => $data['free_qty'],
-            'recorded_at' => $now,
-        ]);
+        $snapshotExists = ProductStockSnapshot::query()
+            ->where('product_id', $product->id)
+            ->where('recorded_at', $now)
+            ->exists();
+
+        if (! $snapshotExists) {
+            ProductStockSnapshot::query()->create([
+                'product_id' => $product->id,
+                'qty_on_hand' => $data['qty_available'],
+                'qty_forecasted' => $data['virtual_available'],
+                'qty_free' => $data['free_qty'],
+                'recorded_at' => $now,
+            ]);
+
+            $this->snapshotCount++;
+        }
 
         $this->syncedCount++;
-        $this->snapshotCount++;
     }
 
     /**
