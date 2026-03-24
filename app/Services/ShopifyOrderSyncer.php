@@ -15,6 +15,7 @@ class ShopifyOrderSyncer
 
     public function __construct(
         protected ShopifyClient $shopify,
+        protected PostalProvinceResolver $provinceResolver,
     ) {}
 
     /**
@@ -96,7 +97,8 @@ class ShopifyOrderSyncer
                                 totalRefundedSet { shopMoney { amount } }
                                 displayFinancialStatus
                                 displayFulfillmentStatus
-                                billingAddress { countryCodeV2 }
+                                billingAddress { countryCodeV2 provinceCode zip }
+                                shippingAddress { countryCodeV2 provinceCode zip }
                                 customer {
                                     id
                                     email
@@ -154,7 +156,8 @@ class ShopifyOrderSyncer
                             totalRefundedSet { shopMoney { amount } }
                             displayFinancialStatus
                             displayFulfillmentStatus
-                            billingAddress { countryCodeV2 }
+                            billingAddress { countryCodeV2 provinceCode zip }
+                            shippingAddress { countryCodeV2 provinceCode zip }
                             customer {
                                 id
                                 email
@@ -222,30 +225,46 @@ class ShopifyOrderSyncer
         $results = $this->shopify->bulkOperationResults($url);
 
         // Bulk operations return flat JSONL with __parentId references.
-        // Group line items by their parent order.
-        $orders = [];
-        $lineItemsByParent = [];
-        $customersByOrder = [];
+        // Orders come first, followed by their child line items.
+        // Process each order once the next order appears (meaning all its line items have been read).
+        $currentOrder = null;
+        $currentLineItems = [];
 
         foreach ($results as $row) {
             if (isset($row['__parentId'])) {
-                // This is a line item (child of an order)
-                $lineItemsByParent[$row['__parentId']][] = $row;
+                $currentLineItems[] = $row;
             } else {
-                // This is an order
-                $orders[$row['id']] = $row;
+                // New order encountered — flush the previous one
+                if ($currentOrder !== null) {
+                    $this->flushBulkOrder($currentOrder, $currentLineItems);
+                }
+
+                $currentOrder = $row;
+                $currentLineItems = [];
             }
         }
 
-        foreach ($orders as $orderId => $orderData) {
-            $orderData['lineItems'] = [
-                'edges' => array_map(
-                    fn (array $item) => ['node' => $item],
-                    $lineItemsByParent[$orderId] ?? []
-                ),
-            ];
-            $this->upsertOrder($orderData);
+        // Flush the last order
+        if ($currentOrder !== null) {
+            $this->flushBulkOrder($currentOrder, $currentLineItems);
         }
+    }
+
+    /**
+     * Process a single order from bulk operation results.
+     *
+     * @param  array<string, mixed>  $orderData
+     * @param  array<int, array<string, mixed>>  $lineItems
+     */
+    protected function flushBulkOrder(array $orderData, array $lineItems): void
+    {
+        $orderData['lineItems'] = [
+            'edges' => array_map(
+                fn (array $item) => ['node' => $item],
+                $lineItems
+            ),
+        ];
+        $this->upsertOrder($orderData);
     }
 
     /**
@@ -279,10 +298,17 @@ class ShopifyOrderSyncer
                     'financial_status' => $data['displayFinancialStatus'],
                     'fulfillment_status' => $data['displayFulfillmentStatus'],
                     'customer_id' => $customerId,
-                    'country_code' => $data['billingAddress']['countryCodeV2'] ?? null,
+                    'billing_country_code' => $data['billingAddress']['countryCodeV2'] ?? null,
+                    'billing_province_code' => $data['billingAddress']['provinceCode'] ?? null,
+                    'billing_postal_code' => $data['billingAddress']['zip'] ?? null,
+                    'shipping_country_code' => $data['shippingAddress']['countryCodeV2'] ?? null,
+                    'shipping_province_code' => $data['shippingAddress']['provinceCode'] ?? null,
+                    'shipping_postal_code' => $data['shippingAddress']['zip'] ?? null,
                     'currency' => $data['totalPriceSet']['shopMoney']['currencyCode'],
                 ]
             );
+
+            $this->resolveProvinces($order);
 
             // Update customer order date boundaries
             if ($customerId) {
@@ -312,6 +338,34 @@ class ShopifyOrderSyncer
 
             $this->syncedCount++;
         });
+    }
+
+    /**
+     * Resolve province codes from postal codes when Shopify doesn't provide them.
+     */
+    protected function resolveProvinces(ShopifyOrder $order): void
+    {
+        $updates = [];
+
+        if (! $order->shipping_province_code && $order->shipping_country_code && $order->shipping_postal_code) {
+            $province = $this->provinceResolver->resolve($order->shipping_country_code, $order->shipping_postal_code);
+
+            if ($province) {
+                $updates['shipping_province_code'] = $province;
+            }
+        }
+
+        if (! $order->billing_province_code && $order->billing_country_code && $order->billing_postal_code) {
+            $province = $this->provinceResolver->resolve($order->billing_country_code, $order->billing_postal_code);
+
+            if ($province) {
+                $updates['billing_province_code'] = $province;
+            }
+        }
+
+        if ($updates) {
+            $order->update($updates);
+        }
     }
 
     /**

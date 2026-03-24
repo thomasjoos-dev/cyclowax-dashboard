@@ -36,7 +36,12 @@ class ShopifyOrderFactory extends Factory
             'financial_status' => fake()->randomElement(['PAID', 'PENDING', 'REFUNDED', 'PARTIALLY_REFUNDED']),
             'fulfillment_status' => fake()->randomElement(['FULFILLED', 'UNFULFILLED', 'PARTIALLY_FULFILLED', null]),
             'customer_id' => ShopifyCustomer::factory(),
-            'country_code' => fake()->randomElement(['NL', 'BE', 'DE', 'FR', 'US', 'GB']),
+            'billing_country_code' => fake()->randomElement(['NL', 'BE', 'DE', 'FR', 'US', 'GB']),
+            'billing_province_code' => fn () => fake()->boolean(40) ? fake()->randomElement(['CA', 'NY', 'TX', 'FL']) : null,
+            'billing_postal_code' => fake()->postcode(),
+            'shipping_country_code' => fake()->randomElement(['NL', 'BE', 'DE', 'FR', 'US', 'GB']),
+            'shipping_province_code' => fn () => fake()->boolean(40) ? fake()->randomElement(['CA', 'NY', 'TX', 'FL']) : null,
+            'shipping_postal_code' => fake()->postcode(),
             'currency' => 'EUR',
         ];
     }

@@ -1,0 +1,100 @@
+<?php
+
+/**
+ * Sweden: postal code prefix (2 digits) → Lan (county) ISO 3166-2:SE code.
+ *
+ * Source: PostNord Sverige postnummer-systematik.
+ * Swedish postcodes are 5 digits (XXX XX format). Prefix = first 2 digits.
+ */
+return [
+    '10' => 'AB', // Stockholm
+    '11' => 'AB',
+    '12' => 'AB',
+    '13' => 'AB',
+    '14' => 'AB',
+    '15' => 'AB',
+    '16' => 'AB',
+    '17' => 'AB',
+    '18' => 'AB',
+    '19' => 'AB',
+    '20' => 'AC', // Vasterbotten
+    '21' => 'Z',  // Jamtland
+    '22' => 'Y',  // Vasternorrland
+    '23' => 'Y',
+    '24' => 'X',  // Gavleborg
+    '25' => 'W',  // Dalarna
+    '26' => 'S',  // Varmland
+    '27' => 'S',
+    '28' => 'T',  // Orebro
+    '29' => 'F',  // Jonkoping
+    '30' => 'E',  // Ostergotland
+    '31' => 'N',  // Halland
+    '32' => 'N',
+    '33' => 'H',  // Kalmar
+    '34' => 'G',  // Kronoberg
+    '35' => 'G',
+    '36' => 'H',
+    '37' => 'K',  // Blekinge
+    '38' => 'H',
+    '39' => 'H',
+    '40' => 'O',  // Vastra Gotaland
+    '41' => 'O',
+    '42' => 'O',
+    '43' => 'O',
+    '44' => 'O',
+    '45' => 'O',
+    '46' => 'O',
+    '47' => 'O',
+    '48' => 'O',
+    '49' => 'O',
+    '50' => 'O',
+    '51' => 'O',
+    '52' => 'O',
+    '53' => 'E',
+    '54' => 'E',
+    '55' => 'F',
+    '56' => 'F',
+    '57' => 'F',
+    '58' => 'E',
+    '59' => 'E',
+    '60' => 'E',
+    '61' => 'D',  // Sodermanland
+    '62' => 'I',  // Gotland
+    '63' => 'D',
+    '64' => 'U',  // Vastmanland
+    '65' => 'T',
+    '66' => 'S',
+    '67' => 'S',
+    '68' => 'S',
+    '69' => 'T',
+    '70' => 'T',
+    '71' => 'T',
+    '72' => 'U',
+    '73' => 'U',
+    '74' => 'C',  // Uppsala
+    '75' => 'C',
+    '76' => 'C',
+    '77' => 'W',
+    '78' => 'W',
+    '79' => 'W',
+    '80' => 'X',
+    '81' => 'X',
+    '82' => 'X',
+    '83' => 'Y',
+    '84' => 'Y',
+    '85' => 'AC',
+    '86' => 'AC',
+    '87' => 'Y',
+    '88' => 'AC',
+    '89' => 'AC',
+    '90' => 'AC',
+    '91' => 'AC',
+    '92' => 'BD', // Norrbotten
+    '93' => 'BD',
+    '94' => 'BD',
+    '95' => 'BD',
+    '96' => 'BD',
+    '97' => 'BD',
+    '98' => 'BD',
+    '99' => 'Z',
+];
