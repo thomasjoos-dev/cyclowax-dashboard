@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
+use App\Services\ShippingCostEstimator;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -72,17 +73,17 @@ class ComputeOrderMarginsCommand extends Command
 
         $feePercentage = config('fees.payment.percentage', 1.9) / 100;
         $feeFixed = config('fees.payment.fixed', 0.25);
+        $estimator = app(ShippingCostEstimator::class);
 
         $computed = 0;
 
         $query = ShopifyOrder::query();
 
         if (! $full) {
-            // Only orders missing net_revenue (new/uncomputed)
             $query->whereNull('net_revenue');
         }
 
-        $query->chunkById(500, function ($orders) use (&$computed, $feePercentage, $feeFixed) {
+        $query->chunkById(500, function ($orders) use (&$computed, $feePercentage, $feeFixed, $estimator) {
             foreach ($orders as $order) {
                 $totalCost = $order->lineItems()
                     ->whereNotNull('cost_price')
@@ -92,11 +93,27 @@ class ComputeOrderMarginsCommand extends Command
                 $paymentFee = round($order->total_price * $feePercentage + $feeFixed, 2);
                 $netRevenue = round($order->total_price - $order->tax - $order->refunded, 2);
 
+                // Shipping cost: use exact (from Odoo) or estimate
+                $shippingCost = $order->shipping_cost;
+                $estimated = $order->shipping_cost_estimated;
+
+                if ($shippingCost === null) {
+                    $shippingCost = $estimator->estimate($order->shipping_carrier, $order->shipping_country_code);
+                    $estimated = true;
+                }
+
+                $shippingMargin = $shippingCost !== null
+                    ? round($order->shipping - $shippingCost, 2)
+                    : null;
+
                 $order->update([
                     'net_revenue' => $netRevenue,
                     'total_cost' => $totalCost,
                     'payment_fee' => $paymentFee,
-                    'gross_margin' => round($netRevenue - $totalCost - $paymentFee, 2),
+                    'shipping_cost' => $shippingCost !== null ? round($shippingCost, 2) : null,
+                    'shipping_cost_estimated' => $estimated ?? false,
+                    'shipping_margin' => $shippingMargin,
+                    'gross_margin' => round($netRevenue - $totalCost - $paymentFee - ($shippingCost ?? 0), 2),
                 ]);
 
                 $computed++;

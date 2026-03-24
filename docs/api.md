@@ -165,6 +165,12 @@ One-time OAuth flow to obtain an access token. Opens authorize URL, user pastes 
 ### `odoo:test`
 Test the Odoo API connection. Authenticates, fetches sample products with SKU/COGS/stock, and displays total product count.
 
+### `odoo:sync-shipping-costs`
+Sync carrier names and exact shipping costs from Odoo stock pickings. Links via sale.order.shopify_order_number.
+
+### `odoo:audit-shipping`
+Audit Odoo shipping cost data: coverage per carrier, timeline, and gaps. Use to investigate missing carrier costs.
+
 ### `odoo:sync-products`
 Sync products from Odoo: COGS, stock quantities, categories, barcodes. Records daily stock snapshots. Enriches product_type from Shopify line items.
 

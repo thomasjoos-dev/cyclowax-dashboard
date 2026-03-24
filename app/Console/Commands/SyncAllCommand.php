@@ -21,6 +21,7 @@ class SyncAllCommand extends Command
         $steps = [
             ['shopify:sync-orders', 'Shopify order sync'],
             ['odoo:sync-products', 'Odoo product sync'],
+            ['odoo:sync-shipping-costs', 'Odoo shipping cost sync'],
             ['orders:compute-margins', 'Margin computation'],
         ];
 
