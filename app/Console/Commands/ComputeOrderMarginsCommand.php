@@ -74,8 +74,10 @@ class ComputeOrderMarginsCommand extends Command
 
         $computed = 0;
 
+        // Reset all margins for recalculation with correct formula
+        ShopifyOrder::query()->update(['total_cost' => null, 'payment_fee' => null, 'gross_margin' => null]);
+
         ShopifyOrder::query()
-            ->where(fn ($q) => $q->whereNull('total_cost')->orWhereNull('payment_fee'))
             ->chunkById(500, function ($orders) use (&$computed, $feePercentage, $feeFixed) {
                 foreach ($orders as $order) {
                     $totalCost = $order->lineItems()
@@ -85,10 +87,14 @@ class ComputeOrderMarginsCommand extends Command
 
                     $paymentFee = round($order->total_price * $feePercentage + $feeFixed, 2);
 
+                    // Net revenue = total_price - tax - refunded (universeel correct)
+                    // CM1 = net_revenue - COGS - payment_fee
+                    $netRevenue = $order->total_price - $order->tax - $order->refunded;
+
                     $order->update([
                         'total_cost' => $totalCost,
                         'payment_fee' => $paymentFee,
-                        'gross_margin' => $order->subtotal - $totalCost - $paymentFee,
+                        'gross_margin' => round($netRevenue - $totalCost - $paymentFee, 2),
                     ]);
 
                     $computed++;

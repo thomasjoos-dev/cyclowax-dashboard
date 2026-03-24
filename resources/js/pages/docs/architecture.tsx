@@ -147,7 +147,7 @@ ShopifyOrder
   ├── id, shopify_id, name, ordered_at
   ├── total_price, subtotal, shipping, tax, discounts, refunded
   ├── financial_status, fulfillment_status, currency
-  ├── total_cost (COGS), payment_fee, gross_margin (subtotal - COGS - fee), is_first_order
+  ├── total_cost (COGS), payment_fee, gross_margin (net_revenue - COGS - fee), is_first_order
   ├── discount_codes (comma-separated)
   ├── billing_country_code, billing_province_code, billing_postal_code
   ├── shipping_country_code, shipping_province_code, shipping_postal_code
@@ -206,7 +206,7 @@ app/Services/PostalProvinceResolver.php — resolve(countryCode, postalCode): ?s
                         headers={['Metric', 'Formule']}
                         rows={[
                             ['Net revenue', 'total_price - tax'],
-                            ['CM1 (gross margin)', 'subtotal - total_cost - payment_fee'],
+                            ['CM1 (gross margin)', '(total_price - tax - refunded) - total_cost - payment_fee'],
                             ['Payment fee', 'total_price × 1.9% + €0.25 (config/fees.php)'],
                             ['COGS', 'SUM(line_item.cost_price × quantity)'],
                         ]}
