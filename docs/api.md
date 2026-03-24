@@ -18,8 +18,8 @@ Start a Shopify Bulk Operation. Returns `{id, status}`. Used automatically when 
 #### `bulkOperationStatus(): array`
 Poll the current bulk operation. Returns `{id, status, errorCode, objectCount, url}`.
 
-#### `bulkOperationResults(string $url): array`
-Download and parse JSONL results from a completed bulk operation.
+#### `bulkOperationResults(string $url): Generator`
+Stream and parse JSONL results from a completed bulk operation. Yields rows one at a time to prevent memory exhaustion.
 
 ### Rate Limiting
 - Shopify uses cost-based throttling (1000 points max, 50/sec restore)
@@ -72,9 +72,15 @@ Paginated order list with customer and line items included.
 |-------|------|-------------|
 | `from` | date | Filter orders from this date |
 | `to` | date | Filter orders until this date |
-| `country_code` | string | Filter by country (e.g. `DE`) |
+| `shipping_country` | string | Filter by shipping country (e.g. `US`) |
+| `billing_country` | string | Filter by billing country (e.g. `DE`) |
 | `financial_status` | string | Filter by status (e.g. `PAID`) |
 | `per_page` | int | Items per page (default: 50) |
+
+**Order Resource fields:**
+- Financial: `total_price`, `subtotal`, `shipping`, `tax`, `discounts`, `refunded`, `net_revenue`, `currency`
+- Address: `billing_country_code`, `billing_province_code`, `billing_postal_code`, `shipping_country_code`, `shipping_province_code`, `shipping_postal_code`
+- Attribution: nested `attribution` object with `source_name`, `landing_page_url`, `referrer_url`, `first_touch` (source, source_type, utm_source/medium/campaign/content/term, landing_page, referrer_url), `last_touch` (same fields)
 
 ### `GET /api/v1/orders/{id}`
 Single order with customer and line items.
@@ -117,6 +123,8 @@ Sync orders from Shopify. Defaults to last 3 days.
 - Uses cursor pagination for <1000 orders
 - Uses Bulk Operations API for >1000 orders
 - Upserts orders, line items and customers
+- Fetches postal codes and resolves province codes for EU countries via `PostalProvinceResolver`
+- Syncs first-touch/last-touch attribution from `customerJourneySummary`
 - Flushes dashboard cache after sync
 
 **Scheduled:** Daily at 06:00 via `routes/console.php`
