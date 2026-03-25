@@ -53,6 +53,53 @@ class AnalysisPdfService
     }
 
     /**
+     * Finalize a draft: copy to final-reports, Desktop, and clean up drafts.
+     *
+     * @return array{final: string, desktop: string}
+     */
+    public function finalize(string $draftPath, ?string $filename = null): array
+    {
+        $filename = $filename ?? basename($draftPath);
+        $filename = str_replace(['_draft-', '_draft'], '', $filename);
+
+        $finalDir = storage_path('app/data-analysis/final-reports');
+        $desktopDir = $_SERVER['HOME'].'/Desktop';
+
+        if (! is_dir($finalDir)) {
+            mkdir($finalDir, 0755, true);
+        }
+
+        $finalPath = $finalDir.'/'.$filename;
+        $desktopPath = $desktopDir.'/'.$filename;
+
+        copy($draftPath, $finalPath);
+        copy($draftPath, $desktopPath);
+
+        $this->cleanupDrafts($draftPath);
+
+        return [
+            'final' => $finalPath,
+            'desktop' => $desktopPath,
+        ];
+    }
+
+    /**
+     * Remove all draft versions related to a finalized report.
+     */
+    private function cleanupDrafts(string $draftPath): void
+    {
+        $draftsDir = storage_path('app/data-analysis/drafts');
+        $basename = pathinfo($draftPath, PATHINFO_FILENAME);
+
+        // Strip draft number suffix to find related drafts (e.g. rapport_draft-1, rapport_draft-2)
+        $basePattern = preg_replace('/_draft-?\d*$/', '', $basename);
+
+        foreach (glob($draftsDir.'/'.$basePattern.'*') as $file) {
+            unlink($file);
+        }
+    }
+
+    /**
      * Generate and return the PDF as a download response.
      */
     public function download(array $data, ?string $filename = null): Response
