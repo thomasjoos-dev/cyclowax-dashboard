@@ -330,7 +330,7 @@
 
     {{-- Intro summary --}}
     @if(isset($intro))
-        <div class="intro">{{ $intro }}</div>
+        <div class="intro">{!! $intro !!}</div>
     @endif
 
     {{-- Key metrics (optional) --}}

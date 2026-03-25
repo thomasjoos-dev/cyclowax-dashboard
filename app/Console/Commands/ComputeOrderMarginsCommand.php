@@ -22,6 +22,7 @@ class ComputeOrderMarginsCommand extends Command
         $this->computeOrderMargins();
         $this->classifyFirstOrders();
         $this->classifyChannelTypes();
+        $this->classifyRefinedChannels();
         $this->updateCustomerAggregates();
 
         return self::SUCCESS;
@@ -322,6 +323,179 @@ class ComputeOrderMarginsCommand extends Command
         return 'other';
     }
 
+    protected function classifyRefinedChannels(): void
+    {
+        $full = $this->option('full');
+        $this->info($full ? 'Reclassifying ALL refined channels...' : 'Classifying refined channels for new orders...');
+
+        $classified = 0;
+
+        $query = ShopifyOrder::query();
+
+        if (! $full) {
+            $query->whereNull('refined_channel');
+        }
+
+        $query->chunkById(1000, function ($orders) use (&$classified) {
+            foreach ($orders as $order) {
+                $refinedChannel = $this->deriveRefinedChannel($order);
+
+                if ($refinedChannel) {
+                    $order->update(['refined_channel' => $refinedChannel]);
+                    $classified++;
+                }
+            }
+        });
+
+        $this->info("  Classified: {$classified} orders");
+    }
+
+    protected function deriveRefinedChannel(ShopifyOrder $order): ?string
+    {
+        $source = $order->ft_source;
+        $sourceName = $order->source_name;
+        $utmSource = $order->ft_utm_source ? mb_strtolower($order->ft_utm_source) : null;
+        $utmMedium = $order->ft_utm_medium ? mb_strtolower($order->ft_utm_medium) : null;
+
+        $isDraftOrder = $sourceName === 'shopify_draft_order';
+        $isPaidMedium = in_array($utmMedium, ['cpc', 'paid', 'paidsocial', 'social']);
+
+        $isInstagramSource = in_array($utmSource, ['ig', 'instagram'])
+            || str_starts_with($utmSource ?? '', 'instagram_');
+
+        $isFacebookSource = in_array($utmSource, ['fb', 'facebook'])
+            || str_starts_with($utmSource ?? '', 'facebook_');
+
+        // 1. Draft orders: classify by UTM if available, otherwise by payment status
+        if ($isDraftOrder) {
+            if ($utmSource && $isPaidMedium) {
+                // Draft order with paid UTM: classify to the real paid channel
+                if ($isInstagramSource) {
+                    return 'paid_instagram';
+                }
+                if ($isFacebookSource) {
+                    return 'paid_facebook';
+                }
+                if ($utmSource === 'google') {
+                    return 'paid_google';
+                }
+            }
+
+            if ($utmMedium === 'email') {
+                return 'email';
+            }
+
+            if ($utmMedium === 'product_sync') {
+                return 'google_shopping_free';
+            }
+
+            // Draft order with organic ft_source
+            if (! $utmSource && in_array($source, ['Google', 'Bing', 'DuckDuckGo', 'Yahoo'])) {
+                return 'organic_google';
+            }
+
+            if (! $utmSource && in_array($source, ['Instagram', 'Facebook'])) {
+                return $source === 'Instagram' ? 'organic_instagram' : 'organic_facebook';
+            }
+
+            // Draft order without useful tracking
+            if ($order->total_price == 0) {
+                return 'manual_internal';
+            }
+
+            return 'manual_customer_service';
+        }
+
+        // 2. POS
+        if ($sourceName === 'pos') {
+            return 'pos';
+        }
+
+        // 3. No tracking data
+        if (! $source && ! $sourceName) {
+            return 'unknown';
+        }
+
+        if (! $source) {
+            return 'unknown';
+        }
+
+        // 4. Paid channels (UTM-based, most reliable)
+        if ($isPaidMedium && $isInstagramSource) {
+            return 'paid_instagram';
+        }
+
+        if ($isPaidMedium && $isFacebookSource) {
+            return 'paid_facebook';
+        }
+
+        if ($utmMedium === 'cpc' && $utmSource === 'google') {
+            return 'paid_google';
+        }
+
+        // CPC with unknown source: default to paid_google
+        if ($utmMedium === 'cpc') {
+            return 'paid_google';
+        }
+
+        // 5. Email
+        if ($utmMedium === 'email') {
+            return 'email';
+        }
+
+        // 6. Google Shopping (free)
+        if ($utmMedium === 'product_sync') {
+            return 'google_shopping_free';
+        }
+
+        // 7. AI referrals
+        $isAiReferral = str_contains($source, 'chatgpt.com') || str_contains($source, 'perplexity')
+            || in_array($utmSource, ['chatgpt.com', 'perplexity', 'perplexity.ai']);
+
+        if ($isAiReferral) {
+            return 'ai_referral';
+        }
+
+        // 8. Organic search
+        if ($source === 'Google') {
+            return 'organic_google';
+        }
+
+        if (in_array($source, ['Bing', 'DuckDuckGo', 'Yahoo'])) {
+            return 'organic_bing';
+        }
+
+        if ($order->ft_source_type === 'SEO') {
+            return 'organic_google';
+        }
+
+        // 9. Organic social
+        if ($source === 'Instagram') {
+            return 'organic_instagram';
+        }
+
+        if ($source === 'Facebook') {
+            return 'organic_facebook';
+        }
+
+        // 10. Direct
+        if ($source === 'direct') {
+            return 'direct';
+        }
+
+        // 11. Email from source
+        if ($source === 'email') {
+            return 'email';
+        }
+
+        // 12. Referral (URLs as source)
+        if (str_starts_with($source, 'http') || str_starts_with($source, 'android-app://')) {
+            return 'referral';
+        }
+
+        return 'unknown';
+    }
+
     protected function updateCustomerAggregates(): void
     {
         $this->info('Updating customer aggregates...');
@@ -336,15 +510,15 @@ class ComputeOrderMarginsCommand extends Command
                         ->selectRaw('COUNT(*) as order_count, COALESCE(SUM(total_cost), 0) as total_cost')
                         ->first();
 
-                    $firstOrderChannel = ShopifyOrder::query()
+                    $firstOrder = ShopifyOrder::query()
                         ->where('customer_id', $customer->id)
                         ->where('is_first_order', true)
-                        ->value('channel_type');
+                        ->first(['channel_type', 'refined_channel']);
 
                     $customer->update([
                         'local_orders_count' => $stats->order_count,
                         'total_cost' => $stats->total_cost,
-                        'first_order_channel' => $firstOrderChannel,
+                        'first_order_channel' => $firstOrder?->refined_channel ?? $firstOrder?->channel_type,
                     ]);
 
                     $updated++;
