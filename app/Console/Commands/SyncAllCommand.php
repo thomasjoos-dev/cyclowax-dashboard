@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 #[Signature('sync:all')]
-#[Description('Run the full daily sync pipeline: Shopify orders → Odoo products → compute margins')]
+#[Description('Run the full daily sync pipeline: Shopify → Odoo → Klaviyo → margins → RFM → profiles')]
 class SyncAllCommand extends Command
 {
     public function handle(): int
@@ -22,8 +22,14 @@ class SyncAllCommand extends Command
             ['shopify:sync-orders', 'Shopify order sync'],
             ['odoo:sync-products', 'Odoo product sync'],
             ['odoo:sync-shipping-costs', 'Odoo shipping cost sync'],
+            ['klaviyo:sync-profiles', 'Klaviyo profile sync'],
+            ['klaviyo:sync-campaigns', 'Klaviyo campaign sync'],
             ['orders:compute-margins', 'Margin computation'],
             ['customers:calculate-rfm', 'RFM scoring'],
+            ['klaviyo:sync-engagement', 'Klaviyo engagement sync'],
+            ['profiles:flag-suspects', 'Bot/spam detection'],
+            ['profiles:link', 'Customer profile linking'],
+            ['profiles:score-followers', 'Follower engagement scoring'],
         ];
 
         $failures = 0;

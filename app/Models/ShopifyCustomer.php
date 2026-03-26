@@ -6,6 +6,7 @@ use Database\Factories\ShopifyCustomerFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ShopifyCustomer extends Model
 {
@@ -20,6 +21,14 @@ class ShopifyCustomer extends Model
     public function orders(): HasMany
     {
         return $this->hasMany(ShopifyOrder::class, 'customer_id');
+    }
+
+    /**
+     * @return HasOne<CustomerProfile, $this>
+     */
+    public function customerProfile(): HasOne
+    {
+        return $this->hasOne(CustomerProfile::class);
     }
 
     /**

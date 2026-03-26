@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\KlaviyoClient;
 use App\Services\OdooClient;
 use App\Services\ShopifyClient;
 use Carbon\CarbonImmutable;
@@ -19,6 +20,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(ShopifyClient::class);
         $this->app->singleton(OdooClient::class);
+        $this->app->singleton(KlaviyoClient::class);
     }
 
     /**

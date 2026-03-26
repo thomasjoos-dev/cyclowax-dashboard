@@ -11,6 +11,7 @@
 | Database | SQLite (local), migreerbaar naar MySQL/PostgreSQL |
 | Shopify | GraphQL Admin API (2025-04), custom client |
 | Odoo | JSON-RPC External API, custom client |
+| Klaviyo | REST API v2024-10-15, custom client |
 
 ## Lagen
 
@@ -37,6 +38,33 @@ Odoo Sync
               └── OdooClient (JSON-RPC HTTP client)
                     └── Odoo External API (product.product)
 
+Klaviyo Sync
+  ├── KlaviyoSyncProfilesCommand (artisan)
+  │     └── KlaviyoProfileSyncer (profiles + predictive analytics)
+  │           └── KlaviyoClient (REST HTTP client)
+  │                 └── Klaviyo API (GET /api/profiles)
+  └── KlaviyoSyncCampaignsCommand (artisan)
+        └── KlaviyoCampaignSyncer (campaigns + reporting metrics)
+              └── KlaviyoClient (REST HTTP client)
+                    ├── Klaviyo API (GET /api/campaigns)
+                    └── Klaviyo API (POST /api/campaign-values-reports)
+
+Klaviyo Engagement
+  └── KlaviyoSyncEngagementCommand (artisan)
+        └── KlaviyoEngagementSyncer (per-profile event counts)
+              └── KlaviyoClient (REST HTTP client)
+                    └── Klaviyo API (GET /api/events per profile)
+
+Customer Profiles
+  ├── LinkCustomerProfilesCommand (artisan)
+  │     └── CustomerProfileLinker (email matching → unified profiles)
+  │           ├── ShopifyCustomer (lifecycle_stage: customer)
+  │           └── KlaviyoProfile (lifecycle_stage: follower)
+  └── ScoreFollowersCommand (artisan)
+        └── FollowerScorer (engagement + intent scoring + segment toewijzing)
+              ├── Engagement (1-5): site visits 35%, clicks 30%, opens 20%, recency 15%
+              └── Intent (0-4): site(1) → product view(2) → cart(3) → checkout(4)
+
 Margin Computation
   └── ComputeOrderMarginsCommand (artisan)
         ├── Link line items → products via SKU
@@ -49,6 +77,13 @@ Margin Computation
 ## Dataflow
 
 ### Sync pipeline (dagelijks 06:00 via `sync:all`)
+0. **Klaviyo profiles** (`klaviyo:sync-profiles`)
+   - Cursor-based pagination door alle profielen (page size 100)
+   - Inclusief predictive analytics (CLV, churn, predicted orders)
+   - Batch upsert per 50 profielen
+0. **Klaviyo campaigns** (`klaviyo:sync-campaigns`)
+   - Alle email campaigns ophalen en upserten
+   - Sent campaigns verrijken met metrics via Reporting API (1 req/sec rate limit)
 1. **Shopify orders** (`shopify:sync-orders`)
    - `ShopifyOrderSyncer` telt orders in date range
    - <1000: cursor-based pagination (50/page)
@@ -126,6 +161,39 @@ ShopifyLineItem
 
 ShopifyProduct
   └── id, shopify_id, title, product_type, status
+
+KlaviyoProfile
+  ├── klaviyo_id, email, phone_number, external_id
+  ├── first_name, last_name, organization
+  ├── city, region, country, zip, timezone
+  ├── properties (JSON — custom Klaviyo properties)
+  ├── historic_clv, predicted_clv, total_clv
+  ├── historic_number_of_orders, predicted_number_of_orders
+  ├── average_order_value, churn_probability, average_days_between_orders
+  ├── expected_date_of_next_order, last_event_date
+  ├── emails_received, emails_opened, emails_clicked, engagement_synced_at
+  ├── site_visits, product_views, cart_adds, checkouts_started
+  ├── klaviyo_created_at, klaviyo_updated_at
+  └── hasOne → CustomerProfile
+
+KlaviyoCampaign
+  ├── klaviyo_id, name, channel, status, archived
+  ├── send_strategy, is_tracking_opens, is_tracking_clicks
+  ├── recipients, delivered, bounced
+  ├── opens, opens_unique, clicks, clicks_unique
+  ├── unsubscribes, conversions, conversion_value, revenue_per_recipient
+  ├── scheduled_at, send_time
+  └── klaviyo_created_at, klaviyo_updated_at
+
+CustomerProfile (unified view — koppelt Shopify + Klaviyo)
+  ├── email (unique, lowercase — de matching key)
+  ├── lifecycle_stage: follower | customer
+  ├── shopify_customer_id (FK, nullable), klaviyo_profile_id (FK, nullable)
+  ├── follower_segment: new | hot_lead | high_potential | engaged | fading | inactive
+  ├── engagement_score (1-5, gewogen: site visits 35%, clicks 30%, opens 20%, recency 15%)
+  ├── intent_score (0-4: site→product view→cart→checkout, halveert na 30d)
+  ├── belongsTo → ShopifyCustomer, belongsTo → KlaviyoProfile
+  └── linked_at
 
 AdSpendRecord (toekomstig — tabel klaar, import command volgt)
   ├── period, channel, country_code, campaign_name

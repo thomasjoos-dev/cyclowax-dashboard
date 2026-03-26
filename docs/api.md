@@ -61,6 +61,44 @@ Count records matching a domain filter.
 
 ---
 
+## Klaviyo API
+
+### Connection
+- **Base URL:** `https://a.klaviyo.com/api`
+- **Auth:** Private API key via `Authorization: Klaviyo-API-Key {key}` header
+- **Revision:** `2024-10-15` via `revision` header
+- **Client:** `App\Services\KlaviyoClient`
+
+### Methods
+
+#### `get(string $endpoint, array $query = []): array`
+Perform a GET request. Handles rate limiting with retry (max 3 attempts, respects `Retry-After` header).
+
+#### `post(string $endpoint, array $data = []): array`
+Perform a POST request. Used for the Reporting API.
+
+#### `paginate(string $endpoint, array $query = []): Generator`
+Cursor-based pagination through all results. Follows `links.next` until exhausted. Yields individual items.
+
+### Endpoints Used
+
+#### Profiles — `GET /api/profiles`
+- Page size: 100
+- Includes `predictive_analytics` (CLV, churn probability, order predictions)
+- Rate limit: Burst 10/s, Steady 150/m (with predictive analytics)
+
+#### Campaigns — `GET /api/campaigns`
+- Filtered by `messages.channel = 'email'`
+- Returns metadata only (name, status, tracking options, schedule)
+- Rate limit: Burst 10/s, Steady 150/m
+
+#### Campaign Metrics — `POST /api/campaign-values-reports`
+- Fetches performance data per campaign (recipients, opens, clicks, conversions, revenue)
+- Rate limit: Burst 1/s, Steady 2/m — syncer respects this with 1s delay between requests
+- Statistics: recipients, delivered, bounced, opens, clicks, unsubscribes, conversions, conversion_value, revenue_per_recipient
+
+---
+
 ## Dashboard Controller
 
 ### `GET /dashboard`
@@ -177,7 +215,22 @@ Sync products from Odoo: COGS, stock quantities, categories, barcodes. Records d
 ### `orders:compute-margins`
 Post-sync computation: links line items to products via SKU, sets COGS snapshots, computes order-level margins (total_cost, gross_margin), classifies first orders, updates customer aggregates.
 
+### `klaviyo:sync-profiles`
+Sync all customer profiles from Klaviyo, including predictive analytics (CLV, churn probability). Upserts in batches of 50 via cursor-based pagination.
+
+### `klaviyo:sync-campaigns`
+Sync all email campaigns from Klaviyo, then enrich sent campaigns with performance metrics from the Reporting API. Metrics include opens, clicks, conversions and revenue.
+
+### `klaviyo:sync-engagement`
+Sync engagement and intent event counts per Klaviyo profile from the Events API. Tracks 7 event types: Received Email, Opened Email, Clicked Email, Active on Site, Viewed Product, Added to Cart, Checkout Started. Incremental: only profiles where `last_event_date > engagement_synced_at`. Only syncs followers (skips Shopify customers).
+
+### `profiles:link`
+Create and update unified `customer_profiles` by matching email addresses across Shopify and Klaviyo. Assigns `lifecycle_stage`: `customer` (has Shopify orders) or `follower` (Klaviyo-only subscriber). Idempotent.
+
+### `profiles:score-followers`
+Calculate two scores per follower: engagement (1-5) and intent (0-4). Engagement is weighted: site visits (35%), email clicks (30%), opens (20%), recency (15%). Intent is highest funnel step: site visit (1), product view (2), cart add (3), checkout started (4) — halved if >30 days ago. Segments: `new`, `hot_lead`, `high_potential`, `engaged`, `fading` (30-90d), `inactive` (>90d).
+
 ### `sync:all`
-Full daily pipeline orchestrator. Runs in sequence: `shopify:sync-orders` → `odoo:sync-products` → `orders:compute-margins` → cache flush. Each step logs duration. Failures are logged but don't block subsequent steps.
+Full daily pipeline orchestrator. Runs in sequence: `shopify:sync-orders` → `odoo:sync-products` → `odoo:sync-shipping-costs` → `klaviyo:sync-profiles` → `klaviyo:sync-campaigns` → `orders:compute-margins` → `customers:calculate-rfm` → `klaviyo:sync-engagement` → `profiles:link` → `profiles:score-followers` → cache flush. Each step logs duration. Failures are logged but don't block subsequent steps.
 
 **Scheduled:** Daily at 06:00 via `routes/console.php`
