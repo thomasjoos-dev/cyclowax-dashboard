@@ -31,6 +31,10 @@ class ShopifyCustomer extends Model
             'total_spent' => 'decimal:2',
             'first_order_at' => 'datetime',
             'last_order_at' => 'datetime',
+            'r_score' => 'integer',
+            'f_score' => 'integer',
+            'm_score' => 'integer',
+            'rfm_scored_at' => 'datetime',
         ];
     }
 }

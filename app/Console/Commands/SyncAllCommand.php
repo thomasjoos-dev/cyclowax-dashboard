@@ -23,6 +23,7 @@ class SyncAllCommand extends Command
             ['odoo:sync-products', 'Odoo product sync'],
             ['odoo:sync-shipping-costs', 'Odoo shipping cost sync'],
             ['orders:compute-margins', 'Margin computation'],
+            ['customers:calculate-rfm', 'RFM scoring'],
         ];
 
         $failures = 0;
