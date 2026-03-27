@@ -2,8 +2,14 @@
 
 namespace App\Models;
 
+use App\Enums\HeaterGeneration;
+use App\Enums\JourneyPhase;
+use App\Enums\PortfolioRole;
+use App\Enums\ProductCategory;
+use App\Enums\WaxRecipe;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
@@ -22,7 +28,14 @@ class Product extends Model
             'list_price' => 'decimal:2',
             'weight' => 'decimal:3',
             'is_active' => 'boolean',
+            'is_discontinued' => 'boolean',
+            'discontinued_at' => 'date',
             'last_synced_at' => 'datetime',
+            'product_category' => ProductCategory::class,
+            'portfolio_role' => PortfolioRole::class,
+            'journey_phase' => JourneyPhase::class,
+            'wax_recipe' => WaxRecipe::class,
+            'heater_generation' => HeaterGeneration::class,
         ];
     }
 
@@ -40,5 +53,13 @@ class Product extends Model
     public function stockSnapshots(): HasMany
     {
         return $this->hasMany(ProductStockSnapshot::class);
+    }
+
+    /**
+     * @return BelongsTo<Product, $this>
+     */
+    public function successor(): BelongsTo
+    {
+        return $this->belongsTo(Product::class, 'successor_product_id');
     }
 }
