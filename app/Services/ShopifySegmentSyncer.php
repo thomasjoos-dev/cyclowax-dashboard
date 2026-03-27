@@ -102,12 +102,12 @@ class ShopifySegmentSyncer
 
         Log::info('Shopify: removing old cw: tags', ['customers' => count($jsonlLines)]);
 
-        $this->client->bulkMutation(
+        $operation = $this->client->bulkMutation(
             'mutation tagsRemove($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { node { id } userErrors { field message } } }',
             $jsonl,
         );
 
-        $this->waitForBulkOperation();
+        $this->waitForBulkOperation($operation);
     }
 
     /**
@@ -133,12 +133,12 @@ class ShopifySegmentSyncer
 
         Log::info('Shopify: adding new cw: tags', ['customers' => count($jsonlLines)]);
 
-        $this->client->bulkMutation(
+        $operation = $this->client->bulkMutation(
             'mutation tagsAdd($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { node { id } userErrors { field message } } }',
             $jsonl,
         );
 
-        $this->waitForBulkOperation();
+        $this->waitForBulkOperation($operation);
     }
 
     /**
@@ -162,18 +162,26 @@ class ShopifySegmentSyncer
     }
 
     /**
-     * Wait for the current bulk operation to complete.
+     * Wait for a specific bulk operation to complete.
+     *
+     * @param  array{id: string, status: string}  $operation
      */
-    protected function waitForBulkOperation(): void
+    protected function waitForBulkOperation(array $operation): void
     {
+        $operationId = $operation['id'];
         $maxWait = 300; // 5 minutes
         $elapsed = 0;
 
         do {
-            sleep(2);
-            $elapsed += 2;
+            sleep(3);
+            $elapsed += 3;
 
-            $status = $this->client->bulkOperationStatus();
+            $status = $this->client->bulkMutationStatus();
+
+            if (($status['id'] ?? '') !== $operationId) {
+                return;
+            }
+
             $state = $status['status'] ?? 'COMPLETED';
 
             if (in_array($state, ['COMPLETED', 'FAILED', 'CANCELED'])) {

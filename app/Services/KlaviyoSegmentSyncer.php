@@ -48,7 +48,8 @@ class KlaviyoSegmentSyncer
 
         $query = RiderProfile::query()
             ->whereNotNull('segment')
-            ->whereNotNull('klaviyo_profile_id');
+            ->whereNotNull('klaviyo_profile_id')
+            ->where('email', 'LIKE', '%@%.%');
 
         if ($onlyChanged) {
             $query->where(function ($q) {
@@ -138,8 +139,10 @@ class KlaviyoSegmentSyncer
      */
     protected function markSynced(array $profileIds, Carbon $now): void
     {
-        RiderProfile::whereIn('id', $profileIds)
-            ->update(['klaviyo_synced_at' => $now]);
+        foreach (array_chunk($profileIds, 500) as $chunk) {
+            RiderProfile::whereIn('id', $chunk)
+                ->update(['klaviyo_synced_at' => $now]);
+        }
     }
 
     public function syncedCount(): int

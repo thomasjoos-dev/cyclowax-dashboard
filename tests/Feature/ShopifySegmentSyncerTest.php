@@ -46,7 +46,7 @@ it('syncs customer segment tags to Shopify', function () {
         ->andReturn(['id' => 'op-2', 'status' => 'CREATED']);
 
     // Status polling returns COMPLETED immediately
-    $client->shouldReceive('bulkOperationStatus')
+    $client->shouldReceive('bulkMutationStatus')
         ->andReturn(['status' => 'COMPLETED']);
 
     $syncer = new ShopifySegmentSyncer($client);
@@ -92,7 +92,7 @@ it('only syncs changed customers in incremental mode', function () {
         ->twice()
         ->andReturn(['id' => 'op-1', 'status' => 'CREATED']);
 
-    $client->shouldReceive('bulkOperationStatus')
+    $client->shouldReceive('bulkMutationStatus')
         ->andReturn(['status' => 'COMPLETED']);
 
     $syncer = new ShopifySegmentSyncer($client);
@@ -130,7 +130,7 @@ it('uses cw: prefix for tags', function () {
         }))
         ->andReturn(['id' => 'op-2', 'status' => 'CREATED']);
 
-    $client->shouldReceive('bulkOperationStatus')
+    $client->shouldReceive('bulkMutationStatus')
         ->andReturn(['status' => 'COMPLETED']);
 
     $syncer = new ShopifySegmentSyncer($client);

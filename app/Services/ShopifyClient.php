@@ -105,6 +105,29 @@ class ShopifyClient
     }
 
     /**
+     * Poll the status of the current bulk mutation operation.
+     *
+     * @return array{id: string, status: string, errorCode: ?string, objectCount: string}
+     */
+    public function bulkMutationStatus(): array
+    {
+        $query = <<<'GRAPHQL'
+            {
+                currentBulkOperation(type: MUTATION) {
+                    id
+                    status
+                    errorCode
+                    objectCount
+                }
+            }
+        GRAPHQL;
+
+        $response = $this->query($query);
+
+        return $response['data']['currentBulkOperation'] ?? [];
+    }
+
+    /**
      * Download and parse bulk operation results as a JSONL stream.
      * Uses a temp file to avoid memory exhaustion on large result sets.
      *
@@ -217,15 +240,22 @@ class ShopifyClient
 
         $target = $result['stagedTargets'][0];
         $url = $target['url'];
-        $parameters = collect($target['parameters'])->pluck('value', 'name')->toArray();
 
-        // Upload the JSONL file to the staged target
-        Http::asMultipart()
-            ->attach('file', $jsonl, 'bulk_mutation.jsonl')
-            ->post($url, $parameters)
+        // Build multipart form: all parameters as fields, then the file
+        $request = Http::asMultipart();
+
+        foreach ($target['parameters'] as $param) {
+            $request = $request->attach($param['name'], $param['value']);
+        }
+
+        $request->attach('file', $jsonl, 'bulk_mutation.jsonl')
+            ->post($url)
             ->throw();
 
-        return $target['resourceUrl'];
+        // The stagedUploadPath for bulkOperationRunMutation is the key parameter
+        $key = collect($target['parameters'])->firstWhere('name', 'key')['value'];
+
+        return $key;
     }
 
     /**
