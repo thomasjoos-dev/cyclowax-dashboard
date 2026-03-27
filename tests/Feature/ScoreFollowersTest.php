@@ -1,14 +1,16 @@
 <?php
 
-use App\Models\CustomerProfile;
+use App\Enums\FollowerSegment;
+use App\Enums\LifecycleStage;
 use App\Models\KlaviyoProfile;
+use App\Models\RiderProfile;
 use App\Models\ShopifyCustomer;
 use App\Services\FollowerScorer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-function createFollowerProfile(array $klaviyoOverrides = [], array $profileOverrides = []): CustomerProfile
+function createFollowerProfile(array $klaviyoOverrides = [], array $profileOverrides = []): RiderProfile
 {
     $klaviyo = KlaviyoProfile::factory()->create(array_merge([
         'emails_received' => 20,
@@ -22,9 +24,9 @@ function createFollowerProfile(array $klaviyoOverrides = [], array $profileOverr
         'klaviyo_created_at' => now()->subMonths(6),
     ], $klaviyoOverrides));
 
-    return CustomerProfile::factory()->create(array_merge([
+    return RiderProfile::factory()->create(array_merge([
         'email' => $klaviyo->email,
-        'lifecycle_stage' => 'follower',
+        'lifecycle_stage' => LifecycleStage::Follower,
         'klaviyo_profile_id' => $klaviyo->id,
     ], $profileOverrides));
 }
@@ -38,7 +40,7 @@ it('assigns new segment for recent signups', function () {
     $scorer = new FollowerScorer;
     $scorer->score();
 
-    expect(CustomerProfile::first()->follower_segment)->toBe('new');
+    expect(RiderProfile::first()->segment)->toBe(FollowerSegment::New->value);
 });
 
 it('assigns hot_lead over new when intent is high', function () {
@@ -54,7 +56,7 @@ it('assigns hot_lead over new when intent is high', function () {
     $scorer = new FollowerScorer;
     $scorer->score();
 
-    expect(CustomerProfile::first()->follower_segment)->toBe('hot_lead');
+    expect(RiderProfile::first()->segment)->toBe(FollowerSegment::HotLead->value);
 });
 
 it('assigns hot_lead for abandoned cart with recent activity', function () {
@@ -73,9 +75,9 @@ it('assigns hot_lead for abandoned cart with recent activity', function () {
     $scorer = new FollowerScorer;
     $scorer->score();
 
-    $cp = CustomerProfile::first();
+    $cp = RiderProfile::first();
 
-    expect($cp->follower_segment)->toBe('hot_lead')
+    expect($cp->segment)->toBe(FollowerSegment::HotLead->value)
         ->and($cp->intent_score)->toBe(4);
 });
 
@@ -95,9 +97,9 @@ it('assigns high_potential for product viewers with engagement', function () {
     $scorer = new FollowerScorer;
     $scorer->score();
 
-    $cp = CustomerProfile::first();
+    $cp = RiderProfile::first();
 
-    expect($cp->follower_segment)->toBe('high_potential')
+    expect($cp->segment)->toBe(FollowerSegment::HighPotential->value)
         ->and($cp->intent_score)->toBe(2);
 });
 
@@ -117,9 +119,9 @@ it('assigns engaged for active email readers without product interest', function
     $scorer = new FollowerScorer;
     $scorer->score();
 
-    $cp = CustomerProfile::first();
+    $cp = RiderProfile::first();
 
-    expect($cp->follower_segment)->toBe('engaged')
+    expect($cp->segment)->toBe(FollowerSegment::Engaged->value)
         ->and($cp->intent_score)->toBeLessThanOrEqual(1);
 });
 
@@ -137,7 +139,7 @@ it('assigns fading after 30 days of inactivity', function () {
     $scorer = new FollowerScorer;
     $scorer->score();
 
-    expect(CustomerProfile::first()->follower_segment)->toBe('fading');
+    expect(RiderProfile::first()->segment)->toBe(FollowerSegment::Fading->value);
 });
 
 it('assigns inactive after 90 days', function () {
@@ -154,9 +156,9 @@ it('assigns inactive after 90 days', function () {
     $scorer = new FollowerScorer;
     $scorer->score();
 
-    $cp = CustomerProfile::first();
+    $cp = RiderProfile::first();
 
-    expect($cp->follower_segment)->toBe('inactive')
+    expect($cp->segment)->toBe(FollowerSegment::Inactive->value)
         ->and($cp->engagement_score)->toBeLessThanOrEqual(2);
 });
 
@@ -172,7 +174,7 @@ it('halves intent score when last event is older than 30 days', function () {
     $scorer->score();
 
     // Base intent = 4 (checkout started), halved to 2 because > 30 days
-    expect(CustomerProfile::first()->intent_score)->toBe(2);
+    expect(RiderProfile::first()->intent_score)->toBe(2);
 });
 
 it('does not score customer profiles', function () {
@@ -188,9 +190,9 @@ it('does not score customer profiles', function () {
 
     $customer = ShopifyCustomer::factory()->create(['email' => $klaviyo->email]);
 
-    CustomerProfile::factory()->create([
+    RiderProfile::factory()->create([
         'email' => $klaviyo->email,
-        'lifecycle_stage' => 'customer',
+        'lifecycle_stage' => LifecycleStage::Customer,
         'shopify_customer_id' => $customer->id,
         'klaviyo_profile_id' => $klaviyo->id,
     ]);
@@ -198,6 +200,6 @@ it('does not score customer profiles', function () {
     $scorer = new FollowerScorer;
     $scorer->score();
 
-    expect(CustomerProfile::first()->follower_segment)->toBeNull()
-        ->and(CustomerProfile::first()->intent_score)->toBeNull();
+    expect(RiderProfile::first()->segment)->toBeNull()
+        ->and(RiderProfile::first()->intent_score)->toBeNull();
 });

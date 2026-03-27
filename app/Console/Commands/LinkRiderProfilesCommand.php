@@ -2,22 +2,22 @@
 
 namespace App\Console\Commands;
 
-use App\Services\CustomerProfileLinker;
+use App\Services\RiderProfileLinker;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
 #[Signature('profiles:link')]
-#[Description('Create and update unified customer profiles by matching email addresses')]
-class LinkCustomerProfilesCommand extends Command
+#[Description('Create and update unified rider profiles by matching email addresses')]
+class LinkRiderProfilesCommand extends Command
 {
     /**
      * Execute the console command.
      */
-    public function handle(CustomerProfileLinker $linker): int
+    public function handle(RiderProfileLinker $linker): int
     {
-        $this->components->info('Linking customer profiles...');
+        $this->components->info('Linking rider profiles...');
 
         try {
             $result = $linker->link();

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\CustomerSegment;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyOrder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -47,12 +48,12 @@ it('scores customers and assigns segments', function () {
     $top->refresh();
     expect($top->r_score)->toBe(5)
         ->and($top->f_score)->toBe(5)
-        ->and($top->rfm_segment)->toBe('Top Customers')
+        ->and($top->rfm_segment)->toBe(CustomerSegment::Champion)
         ->and($top->rfm_scored_at)->not->toBeNull();
 
     $lowValue->refresh();
     expect($lowValue->f_score)->toBe(1)
-        ->and($lowValue->rfm_segment)->toBe('Low-Value One-Timers');
+        ->and($lowValue->rfm_segment)->toBe(CustomerSegment::OneTimer);
 });
 
 it('excludes refunded and voided orders from scoring', function () {
@@ -100,7 +101,7 @@ it('clears scores for customers who fall out of scope', function () {
         'r_score' => 5,
         'f_score' => 5,
         'm_score' => 5,
-        'rfm_segment' => 'Top Customers',
+        'rfm_segment' => CustomerSegment::Champion,
         'rfm_scored_at' => now()->subDay(),
     ]);
 
@@ -147,5 +148,5 @@ it('assigns at risk segment before loyal middle', function () {
     $atRisk->refresh();
     // With very old orders, R should be low (1-2), F=4 (3 orders), M should be high
     // This should match At Risk (R<=2, F>=3, M>=3) before Loyal Middle (F>=3, M>=2)
-    expect($atRisk->rfm_segment)->toBe('At Risk');
+    expect($atRisk->rfm_segment)->toBe(CustomerSegment::AtRisk);
 });

@@ -2,13 +2,15 @@
 
 namespace Database\Factories;
 
-use App\Models\CustomerProfile;
+use App\Enums\FollowerSegment;
+use App\Enums\LifecycleStage;
+use App\Models\RiderProfile;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<CustomerProfile>
+ * @extends Factory<RiderProfile>
  */
-class CustomerProfileFactory extends Factory
+class RiderProfileFactory extends Factory
 {
     /**
      * Define the model's default state.
@@ -19,7 +21,7 @@ class CustomerProfileFactory extends Factory
     {
         return [
             'email' => fake()->unique()->safeEmail(),
-            'lifecycle_stage' => 'follower',
+            'lifecycle_stage' => LifecycleStage::Follower,
             'linked_at' => now(),
         ];
     }
@@ -30,9 +32,9 @@ class CustomerProfileFactory extends Factory
     public function follower(): static
     {
         return $this->state(fn () => [
-            'lifecycle_stage' => 'follower',
+            'lifecycle_stage' => LifecycleStage::Follower,
             'engagement_score' => fake()->numberBetween(1, 5),
-            'follower_segment' => fake()->randomElement(['high_potential', 'engaged', 'new', 'fading', 'inactive']),
+            'segment' => fake()->randomElement(FollowerSegment::cases())->value,
         ]);
     }
 
@@ -42,8 +44,8 @@ class CustomerProfileFactory extends Factory
     public function customer(): static
     {
         return $this->state(fn () => [
-            'lifecycle_stage' => 'customer',
-            'follower_segment' => null,
+            'lifecycle_stage' => LifecycleStage::Customer,
+            'segment' => null,
             'engagement_score' => null,
         ]);
     }

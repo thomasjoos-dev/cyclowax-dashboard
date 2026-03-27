@@ -138,6 +138,97 @@ class ShopifyClient
     }
 
     /**
+     * Upload a JSONL string via staged uploads and run a bulk mutation.
+     *
+     * @return array{id: string, status: string}
+     */
+    public function bulkMutation(string $mutation, string $jsonl): array
+    {
+        $stagedTarget = $this->stagedUpload($jsonl);
+
+        $wrappedMutation = <<<GRAPHQL
+            mutation {
+                bulkOperationRunMutation(
+                    mutation: "{$mutation}",
+                    stagedUploadPath: "{$stagedTarget}"
+                ) {
+                    bulkOperation {
+                        id
+                        status
+                    }
+                    userErrors {
+                        field
+                        message
+                    }
+                }
+            }
+        GRAPHQL;
+
+        $response = $this->query($wrappedMutation);
+        $result = $response['data']['bulkOperationRunMutation'] ?? [];
+
+        if (! empty($result['userErrors'])) {
+            throw new RuntimeException('Shopify bulk mutation error: '.json_encode($result['userErrors']));
+        }
+
+        return $result['bulkOperation'];
+    }
+
+    /**
+     * Create a staged upload and upload JSONL content.
+     *
+     * @return string The staged upload path for use in bulk operations.
+     */
+    protected function stagedUpload(string $jsonl): string
+    {
+        $mutation = <<<'GRAPHQL'
+            mutation ($input: [StagedUploadInput!]!) {
+                stagedUploadsCreate(input: $input) {
+                    stagedTargets {
+                        url
+                        resourceUrl
+                        parameters {
+                            name
+                            value
+                        }
+                    }
+                    userErrors {
+                        field
+                        message
+                    }
+                }
+            }
+        GRAPHQL;
+
+        $response = $this->query($mutation, [
+            'input' => [[
+                'filename' => 'bulk_mutation.jsonl',
+                'mimeType' => 'text/jsonl',
+                'httpMethod' => 'POST',
+                'resource' => 'BULK_MUTATION_VARIABLES',
+            ]],
+        ]);
+
+        $result = $response['data']['stagedUploadsCreate'] ?? [];
+
+        if (! empty($result['userErrors'])) {
+            throw new RuntimeException('Shopify staged upload error: '.json_encode($result['userErrors']));
+        }
+
+        $target = $result['stagedTargets'][0];
+        $url = $target['url'];
+        $parameters = collect($target['parameters'])->pluck('value', 'name')->toArray();
+
+        // Upload the JSONL file to the staged target
+        Http::asMultipart()
+            ->attach('file', $jsonl, 'bulk_mutation.jsonl')
+            ->post($url, $parameters)
+            ->throw();
+
+        return $target['resourceUrl'];
+    }
+
+    /**
      * Execute the HTTP request with rate limit handling.
      */
     protected function request(string $query, array $variables = []): Response

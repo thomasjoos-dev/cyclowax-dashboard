@@ -15,11 +15,11 @@ class KlaviyoProfile extends Model
     protected $guarded = [];
 
     /**
-     * @return HasOne<CustomerProfile, $this>
+     * @return HasOne<RiderProfile, $this>
      */
-    public function customerProfile(): HasOne
+    public function riderProfile(): HasOne
     {
-        return $this->hasOne(CustomerProfile::class);
+        return $this->hasOne(RiderProfile::class);
     }
 
     /**

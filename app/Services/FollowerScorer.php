@@ -2,13 +2,22 @@
 
 namespace App\Services;
 
-use App\Models\CustomerProfile;
+use App\Enums\FollowerSegment;
+use App\Enums\LifecycleStage;
+use App\Models\RiderProfile;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 
 class FollowerScorer
 {
     protected int $scoredCount = 0;
+
+    protected SegmentTransitionLogger $transitionLogger;
+
+    public function __construct()
+    {
+        $this->transitionLogger = new SegmentTransitionLogger;
+    }
 
     /**
      * Calculate engagement scores, intent scores and assign segments for all follower profiles.
@@ -20,14 +29,14 @@ class FollowerScorer
         Log::info('Follower scoring starting');
 
         // Clear scores for suspect profiles
-        CustomerProfile::query()
-            ->where('lifecycle_stage', 'follower')
+        RiderProfile::query()
+            ->where('lifecycle_stage', LifecycleStage::Follower)
             ->whereHas('klaviyoProfile', fn ($q) => $q->where('is_suspect', true))
-            ->whereNotNull('follower_segment')
-            ->update(['follower_segment' => null, 'engagement_score' => null, 'intent_score' => null]);
+            ->whereNotNull('segment')
+            ->update(['segment' => null, 'engagement_score' => null, 'intent_score' => null]);
 
-        CustomerProfile::query()
-            ->where('lifecycle_stage', 'follower')
+        RiderProfile::query()
+            ->where('lifecycle_stage', LifecycleStage::Follower)
             ->whereNotNull('klaviyo_profile_id')
             ->whereHas('klaviyoProfile', fn ($q) => $q->where('is_suspect', false))
             ->with('klaviyoProfile')
@@ -39,7 +48,10 @@ class FollowerScorer
                 $this->scoredCount += $profiles->count();
             });
 
-        Log::info('Follower scoring completed', ['scored' => $this->scoredCount]);
+        Log::info('Follower scoring completed', [
+            'scored' => $this->scoredCount,
+            'transitions' => $this->transitionLogger->loggedCount(),
+        ]);
 
         return $this->scoredCount;
     }
@@ -47,7 +59,7 @@ class FollowerScorer
     /**
      * Score a single follower profile based on engagement and intent data.
      */
-    protected function scoreProfile(CustomerProfile $profile): void
+    protected function scoreProfile(RiderProfile $profile): void
     {
         $klaviyo = $profile->klaviyoProfile;
 
@@ -55,15 +67,26 @@ class FollowerScorer
             return;
         }
 
+        $previousSegment = $profile->segment ? FollowerSegment::tryFrom($profile->segment) : null;
+
         $engagementScore = $this->calculateEngagementScore($klaviyo);
         $intentScore = $this->calculateIntentScore($klaviyo);
         $segment = $this->determineSegment($klaviyo, $engagementScore, $intentScore);
 
-        $profile->update([
+        $updateData = [
             'engagement_score' => $engagementScore,
             'intent_score' => $intentScore,
-            'follower_segment' => $segment,
-        ]);
+            'segment' => $segment->value,
+            'previous_segment' => $previousSegment?->value,
+        ];
+
+        if ($previousSegment !== $segment) {
+            $updateData['segment_changed_at'] = now();
+        }
+
+        $profile->update($updateData);
+
+        $this->transitionLogger->logSegmentChange($profile->id, $previousSegment, $segment);
     }
 
     /**
@@ -155,7 +178,7 @@ class FollowerScorer
     /**
      * Determine the follower segment using a waterfall approach.
      */
-    protected function determineSegment(mixed $klaviyo, int $engagementScore, int $intentScore): string
+    protected function determineSegment(mixed $klaviyo, int $engagementScore, int $intentScore): FollowerSegment
     {
         $daysSinceSignup = $klaviyo->klaviyo_created_at
             ? (int) $klaviyo->klaviyo_created_at->diffInDays(now())
@@ -166,12 +189,12 @@ class FollowerScorer
             : 999;
 
         return match (true) {
-            $intentScore >= 3 && $daysSinceLastEvent <= 30 => 'hot_lead',
-            $intentScore >= 2 && $engagementScore >= 3 && $daysSinceLastEvent <= 30 => 'high_potential',
-            $daysSinceSignup < 30 => 'new',
-            $engagementScore >= 3 && $daysSinceLastEvent <= 30 => 'engaged',
-            $daysSinceLastEvent > 30 && $daysSinceLastEvent <= 90 && ($engagementScore >= 2 || $intentScore >= 1) => 'fading',
-            default => 'inactive',
+            $intentScore >= 3 && $daysSinceLastEvent <= 30 => FollowerSegment::HotLead,
+            $intentScore >= 2 && $engagementScore >= 3 && $daysSinceLastEvent <= 30 => FollowerSegment::HighPotential,
+            $daysSinceSignup < 30 => FollowerSegment::New,
+            $engagementScore >= 3 && $daysSinceLastEvent <= 30 => FollowerSegment::Engaged,
+            $daysSinceLastEvent > 30 && $daysSinceLastEvent <= 90 && ($engagementScore >= 2 || $intentScore >= 1) => FollowerSegment::Fading,
+            default => FollowerSegment::Inactive,
         };
     }
 }

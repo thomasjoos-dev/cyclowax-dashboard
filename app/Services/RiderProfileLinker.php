@@ -2,29 +2,38 @@
 
 namespace App\Services;
 
-use App\Models\CustomerProfile;
+use App\Enums\LifecycleStage;
 use App\Models\KlaviyoProfile;
+use App\Models\RiderProfile;
 use App\Models\ShopifyCustomer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
-class CustomerProfileLinker
+class RiderProfileLinker
 {
+    protected SegmentTransitionLogger $transitionLogger;
+
+    public function __construct()
+    {
+        $this->transitionLogger = new SegmentTransitionLogger;
+    }
+
     /**
-     * Create and update unified customer profiles by matching email addresses.
+     * Create and update unified rider profiles by matching email addresses.
      *
      * @return array{customers: int, followers: int}
      */
     public function link(): array
     {
-        Log::info('Customer profile linking starting');
+        Log::info('Rider profile linking starting');
 
         $customers = $this->linkCustomers();
         $followers = $this->linkFollowers();
 
-        Log::info('Customer profile linking completed', [
+        Log::info('Rider profile linking completed', [
             'customers' => $customers,
             'followers' => $followers,
+            'lifecycle_transitions' => $this->transitionLogger->loggedCount(),
         ]);
 
         return ['customers' => $customers, 'followers' => $followers];
@@ -52,7 +61,7 @@ class CustomerProfileLinker
 
                     $rows[] = [
                         'email' => $email,
-                        'lifecycle_stage' => 'customer',
+                        'lifecycle_stage' => LifecycleStage::Customer->value,
                         'shopify_customer_id' => $customer->id,
                         'klaviyo_profile_id' => $klaviyoProfileId,
                         'linked_at' => now(),
@@ -61,8 +70,16 @@ class CustomerProfileLinker
                     ];
                 }
 
+                $emails = array_column($rows, 'email');
+
+                $existingFollowers = RiderProfile::query()
+                    ->whereIn('email', $emails)
+                    ->where('lifecycle_stage', LifecycleStage::Follower->value)
+                    ->pluck('segment', 'id')
+                    ->toArray();
+
                 DB::transaction(function () use ($rows) {
-                    CustomerProfile::query()->upsert($rows, ['email'], [
+                    RiderProfile::query()->upsert($rows, ['email'], [
                         'lifecycle_stage',
                         'shopify_customer_id',
                         'klaviyo_profile_id',
@@ -70,6 +87,17 @@ class CustomerProfileLinker
                         'updated_at',
                     ]);
                 });
+
+                if (! empty($existingFollowers)) {
+                    foreach ($existingFollowers as $profileId => $lastSegment) {
+                        $this->transitionLogger->logLifecycleChange(
+                            $profileId,
+                            LifecycleStage::Follower,
+                            LifecycleStage::Customer,
+                            $lastSegment,
+                        );
+                    }
+                }
 
                 $count += count($rows);
             });
@@ -91,7 +119,7 @@ class CustomerProfileLinker
             ->where('email', '!=', '')
             ->whereNotIn(
                 DB::raw('LOWER(email)'),
-                CustomerProfile::select('email')
+                RiderProfile::select('email')
             )
             ->chunkById(500, function ($profiles) use (&$count) {
                 $rows = [];
@@ -99,7 +127,7 @@ class CustomerProfileLinker
                 foreach ($profiles as $profile) {
                     $rows[] = [
                         'email' => strtolower($profile->email),
-                        'lifecycle_stage' => 'follower',
+                        'lifecycle_stage' => LifecycleStage::Follower->value,
                         'shopify_customer_id' => null,
                         'klaviyo_profile_id' => $profile->id,
                         'linked_at' => now(),
@@ -109,7 +137,7 @@ class CustomerProfileLinker
                 }
 
                 DB::transaction(function () use ($rows) {
-                    CustomerProfile::query()->upsert($rows, ['email'], [
+                    RiderProfile::query()->upsert($rows, ['email'], [
                         'klaviyo_profile_id',
                         'linked_at',
                         'updated_at',

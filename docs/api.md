@@ -225,12 +225,18 @@ Sync all email campaigns from Klaviyo, then enrich sent campaigns with performan
 Sync engagement and intent event counts per Klaviyo profile from the Events API. Tracks 7 event types: Received Email, Opened Email, Clicked Email, Active on Site, Viewed Product, Added to Cart, Checkout Started. Incremental: only profiles where `last_event_date > engagement_synced_at`. Only syncs followers (skips Shopify customers).
 
 ### `profiles:link`
-Create and update unified `customer_profiles` by matching email addresses across Shopify and Klaviyo. Assigns `lifecycle_stage`: `customer` (has Shopify orders) or `follower` (Klaviyo-only subscriber). Idempotent.
+Create and update unified `rider_profiles` by matching email addresses across Shopify and Klaviyo. Assigns `lifecycle_stage`: `customer` (has Shopify orders) or `follower` (Klaviyo-only subscriber). Idempotent.
+
+### `klaviyo:sync-segments`
+Sync rider segmentation data back to Klaviyo as custom profile properties (`cyclowax_lifecycle`, `cyclowax_segment`). Uses the Bulk Import API (`POST /api/profile-bulk-import-jobs`, max 10K profiles per batch). Default mode is incremental: only profiles where `updated_at > segment_synced_at`. Use `--full` flag for a complete resync. Marks `segment_synced_at` after successful push.
+
+### `shopify:sync-segments`
+Sync rider segment tags (`cw:*`) to Shopify customers via bulk mutations. Two-phase approach: first removes all existing `cw:` tags (`tagsRemove`), then adds the current segment tag (`tagsAdd`). Uses JSONL staged uploads for efficiency. Default mode is incremental: only customers where `updated_at > shopify_synced_at`. Use `--full` flag for a complete resync.
 
 ### `profiles:score-followers`
 Calculate two scores per follower: engagement (1-5) and intent (0-4). Engagement is weighted: site visits (35%), email clicks (30%), opens (20%), recency (15%). Intent is highest funnel step: site visit (1), product view (2), cart add (3), checkout started (4) — halved if >30 days ago. Segments: `new`, `hot_lead`, `high_potential`, `engaged`, `fading` (30-90d), `inactive` (>90d).
 
 ### `sync:all`
-Full daily pipeline orchestrator. Runs in sequence: `shopify:sync-orders` → `odoo:sync-products` → `odoo:sync-shipping-costs` → `klaviyo:sync-profiles` → `klaviyo:sync-campaigns` → `orders:compute-margins` → `customers:calculate-rfm` → `klaviyo:sync-engagement` → `profiles:link` → `profiles:score-followers` → cache flush. Each step logs duration. Failures are logged but don't block subsequent steps.
+Full daily pipeline orchestrator. Runs in sequence: `shopify:sync-orders` → `odoo:sync-products` → `odoo:sync-shipping-costs` → `klaviyo:sync-profiles` → `klaviyo:sync-campaigns` → `orders:compute-margins` → `customers:calculate-rfm` → `klaviyo:sync-engagement` → `profiles:flag-suspects` → `profiles:link` → `profiles:score-followers` → `klaviyo:sync-segments` → `shopify:sync-segments` → cache flush. Each step logs duration. Failures are logged but don't block subsequent steps.
 
 **Scheduled:** Daily at 06:00 via `routes/console.php`

@@ -28,8 +28,10 @@ class SyncAllCommand extends Command
             ['customers:calculate-rfm', 'RFM scoring'],
             ['klaviyo:sync-engagement', 'Klaviyo engagement sync'],
             ['profiles:flag-suspects', 'Bot/spam detection'],
-            ['profiles:link', 'Customer profile linking'],
+            ['profiles:link', 'Rider profile linking'],
             ['profiles:score-followers', 'Follower engagement scoring'],
+            ['klaviyo:sync-segments', 'Klaviyo segment sync'],
+            ['shopify:sync-segments', 'Shopify segment tag sync'],
         ];
 
         $failures = 0;

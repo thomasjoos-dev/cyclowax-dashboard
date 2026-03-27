@@ -2,7 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\CustomerSegment;
+use App\Models\RiderProfile;
 use App\Models\ShopifyCustomer;
+use App\Services\SegmentTransitionLogger;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -31,7 +34,7 @@ class CalculateRfmScoresCommand extends Command
      * Segment rules applied as a waterfall — first match wins.
      * Order matters: specific rules before broad ones.
      *
-     * @var array<string, callable>
+     * @var list<array{CustomerSegment, callable}>
      */
     private array $segmentRules;
 
@@ -40,13 +43,13 @@ class CalculateRfmScoresCommand extends Command
         parent::__construct();
 
         $this->segmentRules = [
-            'Top Customers' => fn (int $r, int $f, int $m): bool => $r >= 4 && $f >= 4 && $m >= 4,
-            'At Risk' => fn (int $r, int $f, int $m): bool => $r <= 2 && $f >= 3 && $m >= 3,
-            'High Potentials' => fn (int $r, int $f, int $m): bool => $r >= 3 && $f >= 2 && $m >= 3,
-            'Loyal Middle' => fn (int $r, int $f, int $m): bool => $f >= 3 && $m >= 2,
-            'Bargain Hunters' => fn (int $r, int $f, int $m): bool => $f >= 3 && $m <= 2,
-            'Promising One-Timers' => fn (int $r, int $f, int $m): bool => $f === 1 && $m >= 3,
-            'Low-Value One-Timers' => fn (int $r, int $f, int $m): bool => $f === 1 && $m <= 2,
+            [CustomerSegment::Champion, fn (int $r, int $f, int $m): bool => $r >= 4 && $f >= 4 && $m >= 4],
+            [CustomerSegment::AtRisk, fn (int $r, int $f, int $m): bool => $r <= 2 && $f >= 3 && $m >= 3],
+            [CustomerSegment::Rising, fn (int $r, int $f, int $m): bool => $r >= 3 && $f >= 2 && $m >= 3],
+            [CustomerSegment::Loyal, fn (int $r, int $f, int $m): bool => $f >= 3 && $m >= 2],
+            [CustomerSegment::Hunters, fn (int $r, int $f, int $m): bool => $f >= 3 && $m <= 2],
+            [CustomerSegment::PromisingFirst, fn (int $r, int $f, int $m): bool => $f === 1 && $m >= 3],
+            [CustomerSegment::OneTimer, fn (int $r, int $f, int $m): bool => $f === 1 && $m <= 2],
         ];
     }
 
@@ -55,11 +58,12 @@ class CalculateRfmScoresCommand extends Command
         $this->info('Calculating RFM scores...');
 
         $now = Carbon::now();
+        $transitionLogger = new SegmentTransitionLogger;
         $customerData = $this->fetchCustomerData($now);
 
         if ($customerData->isEmpty()) {
             $this->warn('No qualifying customers found.');
-            $this->clearOutOfScopeCustomers(collect(), $now);
+            $this->clearOutOfScopeCustomers(collect(), $now, $transitionLogger);
 
             return self::SUCCESS;
         }
@@ -84,9 +88,13 @@ class CalculateRfmScoresCommand extends Command
             ];
         });
 
-        $this->persistScores($scored, $now);
-        $this->clearOutOfScopeCustomers($scored->pluck('customer_id'), $now);
+        $this->persistScores($scored, $now, $transitionLogger);
+        $this->clearOutOfScopeCustomers($scored->pluck('customer_id'), $now, $transitionLogger);
         $this->printSummary($scored);
+
+        if ($transitionLogger->loggedCount() > 0) {
+            $this->info("  Segment transitions logged: {$transitionLogger->loggedCount()}");
+        }
 
         return self::SUCCESS;
     }
@@ -184,34 +192,69 @@ class CalculateRfmScoresCommand extends Command
         return 1;
     }
 
-    private function assignSegment(int $rScore, int $fScore, int $mScore): string
+    private function assignSegment(int $rScore, int $fScore, int $mScore): CustomerSegment
     {
-        foreach ($this->segmentRules as $segment => $rule) {
+        foreach ($this->segmentRules as [$segment, $rule]) {
             if ($rule($rScore, $fScore, $mScore)) {
                 return $segment;
             }
         }
 
-        return 'Unclassified';
+        return CustomerSegment::NewCustomer;
     }
 
     /**
-     * @param  Collection<int, array{customer_id: int, r_score: int, f_score: int, m_score: int, rfm_segment: string}>  $scored
+     * @param  Collection<int, array{customer_id: int, r_score: int, f_score: int, m_score: int, rfm_segment: CustomerSegment}>  $scored
      */
-    private function persistScores(Collection $scored, Carbon $now): void
+    private function persistScores(Collection $scored, Carbon $now, SegmentTransitionLogger $transitionLogger): void
     {
         $this->info('  Persisting scores...');
 
-        $scored->chunk(500)->each(function (Collection $chunk) use ($now) {
+        $scored->chunk(500)->each(function (Collection $chunk) use ($now, $transitionLogger) {
+            $customerIds = $chunk->pluck('customer_id')->toArray();
+
+            $previousSegments = ShopifyCustomer::whereIn('id', $customerIds)
+                ->pluck('rfm_segment', 'id');
+
+            $riderProfiles = RiderProfile::whereIn('shopify_customer_id', $customerIds)
+                ->pluck('segment', 'shopify_customer_id')
+                ->toArray();
+
+            $profileIds = RiderProfile::whereIn('shopify_customer_id', $customerIds)
+                ->pluck('id', 'shopify_customer_id');
+
             foreach ($chunk as $row) {
+                $previousSegment = $previousSegments[$row['customer_id']] ?? null;
+
                 ShopifyCustomer::where('id', $row['customer_id'])
                     ->update([
                         'r_score' => $row['r_score'],
                         'f_score' => $row['f_score'],
                         'm_score' => $row['m_score'],
                         'rfm_segment' => $row['rfm_segment'],
+                        'previous_rfm_segment' => $previousSegment,
                         'rfm_scored_at' => $now,
                     ]);
+
+                $profileId = $profileIds[$row['customer_id']] ?? null;
+
+                if ($profileId) {
+                    $previousRiderSegment = $riderProfiles[$row['customer_id']] ?? null;
+                    $newSegmentValue = $row['rfm_segment']->value;
+
+                    $updateData = [
+                        'segment' => $newSegmentValue,
+                        'previous_segment' => $previousRiderSegment,
+                    ];
+
+                    if ($previousRiderSegment !== $newSegmentValue) {
+                        $updateData['segment_changed_at'] = $now;
+                    }
+
+                    RiderProfile::where('id', $profileId)->update($updateData);
+
+                    $transitionLogger->logCustomerSegmentChange($profileId, $previousSegment, $row['rfm_segment']);
+                }
             }
         });
     }
@@ -222,30 +265,47 @@ class CalculateRfmScoresCommand extends Command
      *
      * @param  Collection<int, int>  $scoredCustomerIds
      */
-    private function clearOutOfScopeCustomers(Collection $scoredCustomerIds, Carbon $now): void
+    private function clearOutOfScopeCustomers(Collection $scoredCustomerIds, Carbon $now, SegmentTransitionLogger $transitionLogger): void
     {
-        $cleared = ShopifyCustomer::query()
+        $outOfScope = ShopifyCustomer::query()
             ->whereNotNull('rfm_segment')
             ->whereNotIn('id', $scoredCustomerIds->toArray())
+            ->get(['id', 'rfm_segment']);
+
+        if ($outOfScope->isEmpty()) {
+            return;
+        }
+
+        $profileIds = RiderProfile::whereIn('shopify_customer_id', $outOfScope->pluck('id'))
+            ->pluck('id', 'shopify_customer_id');
+
+        foreach ($outOfScope as $customer) {
+            $profileId = $profileIds[$customer->id] ?? null;
+
+            if ($profileId) {
+                $transitionLogger->logCustomerSegmentChange($profileId, $customer->rfm_segment, null);
+            }
+        }
+
+        ShopifyCustomer::whereIn('id', $outOfScope->pluck('id'))
             ->update([
                 'r_score' => null,
                 'f_score' => null,
                 'm_score' => null,
                 'rfm_segment' => null,
+                'previous_rfm_segment' => null,
                 'rfm_scored_at' => $now,
             ]);
 
-        if ($cleared > 0) {
-            $this->info("  Cleared {$cleared} out-of-scope customers.");
-        }
+        $this->info("  Cleared {$outOfScope->count()} out-of-scope customers.");
     }
 
     /**
-     * @param  Collection<int, array{customer_id: int, r_score: int, f_score: int, m_score: int, rfm_segment: string}>  $scored
+     * @param  Collection<int, array{customer_id: int, r_score: int, f_score: int, m_score: int, rfm_segment: CustomerSegment}>  $scored
      */
     private function printSummary(Collection $scored): void
     {
-        $segments = $scored->groupBy('rfm_segment')->map->count()->sortDesc();
+        $segments = $scored->groupBy(fn (array $row) => $row['rfm_segment']->value)->map->count()->sortDesc();
 
         $this->newLine();
         $this->info('  Segment distribution:');

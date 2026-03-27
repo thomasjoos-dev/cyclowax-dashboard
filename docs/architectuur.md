@@ -55,15 +55,37 @@ Klaviyo Engagement
               └── KlaviyoClient (REST HTTP client)
                     └── Klaviyo API (GET /api/events per profile)
 
-Customer Profiles
-  ├── LinkCustomerProfilesCommand (artisan)
-  │     └── CustomerProfileLinker (email matching → unified profiles)
+Rider Profiles & Segmentation
+  ├── LinkRiderProfilesCommand (artisan)
+  │     └── RiderProfileLinker (email matching → unified profiles)
   │           ├── ShopifyCustomer (lifecycle_stage: customer)
-  │           └── KlaviyoProfile (lifecycle_stage: follower)
-  └── ScoreFollowersCommand (artisan)
-        └── FollowerScorer (engagement + intent scoring + segment toewijzing)
-              ├── Engagement (1-5): site visits 35%, clicks 30%, opens 20%, recency 15%
-              └── Intent (0-4): site(1) → product view(2) → cart(3) → checkout(4)
+  │           ├── KlaviyoProfile (lifecycle_stage: follower)
+  │           └── SegmentTransitionLogger (lifecycle transitions: follower → customer)
+  ├── ScoreFollowersCommand (artisan)
+  │     └── FollowerScorer (engagement + intent scoring → RiderProfile.segment)
+  │           ├── Engagement (1-5): site visits 35%, clicks 30%, opens 20%, recency 15%
+  │           ├── Intent (0-4): site(1) → product view(2) → cart(3) → checkout(4)
+  │           └── SegmentTransitionLogger (segment transitions)
+  ├── CalculateRfmScoresCommand (artisan)
+  │     └── RFM scoring (R/F/M 1-5) → ShopifyCustomer.rfm_segment + RiderProfile.segment
+  │           └── SegmentTransitionLogger (segment transitions)
+  ├── KlaviyoSyncSegmentsCommand (artisan)
+  │     └── KlaviyoSegmentSyncer (write-back to Klaviyo)
+  │           ├── Bulk Import API (POST /api/profile-bulk-import-jobs, max 10K/batch)
+  │           ├── Properties: cyclowax_lifecycle, cyclowax_segment
+  │           ├── Incremental (default): only profiles where updated_at > klaviyo_synced_at
+  │           └── Full (--full flag): all profiles with a segment
+  ├── ShopifySyncSegmentsCommand (artisan)
+  │     └── ShopifySegmentSyncer (write-back to Shopify)
+  │           ├── Bulk mutations via JSONL upload (stagedUpload → bulkOperationRunMutation)
+  │           ├── Tags: cw:{segment} (e.g. cw:champion, cw:at_risk)
+  │           ├── Two-phase: tagsRemove all old cw:* → tagsAdd new cw:{segment}
+  │           ├── Incremental (default): only customers where updated_at > shopify_synced_at
+  │           └── Full (--full flag): all customers with a segment
+  └── Enums
+        ├── LifecycleStage: follower | customer
+        ├── FollowerSegment: new | engaged | high_potential | hot_lead | fading | inactive
+        └── CustomerSegment: champion | at_risk | rising | loyal | hunters | promising_first | one_timer | new_customer
 
 Margin Computation
   └── ComputeOrderMarginsCommand (artisan)
@@ -132,6 +154,9 @@ ShopifyCustomer
   ├── id, shopify_id, email, orders_count, total_spent
   ├── local_orders_count (berekend), total_cost (COGS), first_order_channel
   ├── first_order_at, last_order_at, country_code
+  ├── r_score, f_score, m_score (RFM 1-5)
+  ├── rfm_segment (CustomerSegment enum), previous_rfm_segment
+  ├── rfm_scored_at, segment_synced_at
   └── hasMany → ShopifyOrder
 
 ShopifyOrder
@@ -174,7 +199,7 @@ KlaviyoProfile
   ├── emails_received, emails_opened, emails_clicked, engagement_synced_at
   ├── site_visits, product_views, cart_adds, checkouts_started
   ├── klaviyo_created_at, klaviyo_updated_at
-  └── hasOne → CustomerProfile
+  └── hasOne → RiderProfile
 
 KlaviyoCampaign
   ├── klaviyo_id, name, channel, status, archived
@@ -185,15 +210,26 @@ KlaviyoCampaign
   ├── scheduled_at, send_time
   └── klaviyo_created_at, klaviyo_updated_at
 
-CustomerProfile (unified view — koppelt Shopify + Klaviyo)
+RiderProfile (unified view — koppelt Shopify + Klaviyo)
   ├── email (unique, lowercase — de matching key)
-  ├── lifecycle_stage: follower | customer
+  ├── lifecycle_stage (LifecycleStage enum): follower | customer
   ├── shopify_customer_id (FK, nullable), klaviyo_profile_id (FK, nullable)
-  ├── follower_segment: new | hot_lead | high_potential | engaged | fading | inactive
+  ├── segment (string): FollowerSegment of CustomerSegment value — single source of truth
+  ├── previous_segment (string, nullable)
+  ├── segment_changed_at (timestamp, nullable)
   ├── engagement_score (1-5, gewogen: site visits 35%, clicks 30%, opens 20%, recency 15%)
   ├── intent_score (0-4: site→product view→cart→checkout, halveert na 30d)
+  ├── linked_at, klaviyo_synced_at, shopify_synced_at
   ├── belongsTo → ShopifyCustomer, belongsTo → KlaviyoProfile
-  └── linked_at
+  └── hasMany → SegmentTransition
+
+SegmentTransition (transition history log)
+  ├── rider_profile_id (FK)
+  ├── type: lifecycle_change | segment_change
+  ├── from_lifecycle, to_lifecycle (nullable)
+  ├── from_segment, to_segment (nullable)
+  ├── occurred_at (indexed)
+  └── belongsTo → RiderProfile
 
 AdSpendRecord (toekomstig — tabel klaar, import command volgt)
   ├── period, channel, country_code, campaign_name

@@ -2,7 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Models\CustomerProfile;
+use App\Enums\LifecycleStage;
+use App\Models\RiderProfile;
 use App\Services\FollowerScorer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -41,11 +42,11 @@ class ScoreFollowersCommand extends Command
      */
     protected function printSegmentDistribution(): void
     {
-        $segments = CustomerProfile::query()
-            ->where('lifecycle_stage', 'follower')
-            ->whereNotNull('follower_segment')
-            ->select('follower_segment', DB::raw('COUNT(*) as count'))
-            ->groupBy('follower_segment')
+        $segments = RiderProfile::query()
+            ->where('lifecycle_stage', LifecycleStage::Follower)
+            ->whereNotNull('segment')
+            ->select('segment', DB::raw('COUNT(*) as count'))
+            ->groupBy('segment')
             ->orderByDesc('count')
             ->get();
 
@@ -55,7 +56,7 @@ class ScoreFollowersCommand extends Command
 
         $this->newLine();
 
-        $rows = $segments->map(fn ($s) => [$s->follower_segment, number_format($s->count)])->toArray();
+        $rows = $segments->map(fn ($s) => [$s->segment, number_format($s->count)])->toArray();
 
         $this->table(['Segment', 'Count'], $rows);
     }

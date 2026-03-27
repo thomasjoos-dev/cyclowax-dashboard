@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\CustomerSegment;
 use Database\Factories\ShopifyCustomerFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -24,11 +25,11 @@ class ShopifyCustomer extends Model
     }
 
     /**
-     * @return HasOne<CustomerProfile, $this>
+     * @return HasOne<RiderProfile, $this>
      */
-    public function customerProfile(): HasOne
+    public function riderProfile(): HasOne
     {
-        return $this->hasOne(CustomerProfile::class);
+        return $this->hasOne(RiderProfile::class);
     }
 
     /**
@@ -43,6 +44,8 @@ class ShopifyCustomer extends Model
             'r_score' => 'integer',
             'f_score' => 'integer',
             'm_score' => 'integer',
+            'rfm_segment' => CustomerSegment::class,
+            'previous_rfm_segment' => CustomerSegment::class,
             'rfm_scored_at' => 'datetime',
         ];
     }
