@@ -41,6 +41,22 @@ it('assigns new segment for recent signups', function () {
     expect(CustomerProfile::first()->follower_segment)->toBe('new');
 });
 
+it('assigns hot_lead over new when intent is high', function () {
+    createFollowerProfile([
+        'klaviyo_created_at' => now()->subDays(5),
+        'last_event_date' => now()->subDays(1),
+        'checkouts_started' => 2,
+        'cart_adds' => 1,
+        'product_views' => 4,
+        'site_visits' => 3,
+    ]);
+
+    $scorer = new FollowerScorer;
+    $scorer->score();
+
+    expect(CustomerProfile::first()->follower_segment)->toBe('hot_lead');
+});
+
 it('assigns hot_lead for abandoned cart with recent activity', function () {
     createFollowerProfile([
         'emails_received' => 30,

@@ -166,9 +166,9 @@ class FollowerScorer
             : 999;
 
         return match (true) {
-            $daysSinceSignup < 30 => 'new',
             $intentScore >= 3 && $daysSinceLastEvent <= 30 => 'hot_lead',
             $intentScore >= 2 && $engagementScore >= 3 && $daysSinceLastEvent <= 30 => 'high_potential',
+            $daysSinceSignup < 30 => 'new',
             $engagementScore >= 3 && $daysSinceLastEvent <= 30 => 'engaged',
             $daysSinceLastEvent > 30 && $daysSinceLastEvent <= 90 && ($engagementScore >= 2 || $intentScore >= 1) => 'fading',
             default => 'inactive',
