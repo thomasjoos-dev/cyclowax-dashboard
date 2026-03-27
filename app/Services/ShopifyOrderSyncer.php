@@ -134,6 +134,7 @@ class ShopifyOrderSyncer
                                             sku
                                             quantity
                                             originalUnitPriceSet { shopMoney { amount } }
+                                            variant { sku title }
                                         }
                                     }
                                 }
@@ -213,6 +214,7 @@ class ShopifyOrderSyncer
                                         sku
                                         quantity
                                         originalUnitPriceSet { shopMoney { amount } }
+                                        variant { sku title }
                                     }
                                 }
                             }
@@ -391,11 +393,18 @@ class ShopifyOrderSyncer
             foreach ($lineItems as $edge) {
                 $item = $edge['node'];
 
+                $sku = $item['sku'] ?? null;
+
+                // Fall back to variant SKU when line item SKU is empty (bundles/kits)
+                if (empty($sku) && ! empty($item['variant']['sku'])) {
+                    $sku = $item['variant']['sku'];
+                }
+
                 ShopifyLineItem::query()->create([
                     'order_id' => $order->id,
                     'product_title' => $item['title'],
                     'product_type' => $item['product']['productType'] ?? null,
-                    'sku' => $item['sku'] ?? null,
+                    'sku' => $sku,
                     'quantity' => $item['quantity'],
                     'price' => $item['originalUnitPriceSet']['shopMoney']['amount'],
                 ]);
