@@ -131,7 +131,7 @@ class FollowerScorer
         $baseScore = match (true) {
             (int) $klaviyo->checkouts_started > 0 => 4,
             (int) $klaviyo->cart_adds > 0 => 3,
-            (int) $klaviyo->product_views > 0 => 2,
+            (int) $klaviyo->product_views >= 2 => 2,
             (int) $klaviyo->site_visits > 0 => 1,
             default => 0,
         };
