@@ -2,8 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Scenario;
 use App\Services\AnalysisPdfService;
 use App\Services\ForecastService;
+use App\Services\ScenarioService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -12,14 +14,14 @@ use Illuminate\Console\Command;
 #[Description('Generate 2026 Revenue Forecast PDF with 3 scenarios')]
 class GenerateForecastReportCommand extends Command
 {
-    public function handle(AnalysisPdfService $pdf, ForecastService $forecast): int
+    public function handle(AnalysisPdfService $pdf, ForecastService $forecast, ScenarioService $scenarioService): int
     {
         $this->info('Generating 2026 Revenue Forecast...');
 
         $q1Actual = $forecast->periodActuals('2026-01-01', '2026-04-01');
         $rev2025 = $forecast->yearRevenue(2025);
 
-        $scenarios = $this->buildScenarios($forecast, $q1Actual);
+        $scenarios = $this->buildScenarios($forecast, $scenarioService, $q1Actual);
 
         $data = [
             'title' => '2026 Revenue Forecast',
@@ -200,40 +202,26 @@ class GenerateForecastReportCommand extends Command
     }
 
     /**
-     * Build the three forecast scenarios using ForecastService.
-     *
-     * Scenario definitions (assumptions) live here — they are presentation choices.
-     * The actual calculations are delegated to ForecastService.
+     * Build forecast scenarios from the database using ScenarioService.
      *
      * @return array<string, array{quarters: array, totals: array}>
      */
-    private function buildScenarios(ForecastService $forecast, array $q1Actual): array
+    private function buildScenarios(ForecastService $forecast, ScenarioService $scenarioService, array $q1Actual): array
     {
-        // Voorzichtig: 2 kwartalen op 70%, 1 piekmoment, PWK repeat ~20%, AOV €85
-        $voorzichtig = $forecast->calculateScenario([
-            'Q2' => ['acq_rate' => 0.70, 'repeat_rate' => 0.20, 'repeat_aov' => 85],
-            'Q3' => ['acq_rate' => 0.70, 'repeat_rate' => 0.20, 'repeat_aov' => 85],
-            'Q4' => ['acq_rate' => 1.00, 'repeat_rate' => 0.20, 'repeat_aov' => 85],
-        ], $q1Actual);
+        $dbScenarios = $scenarioService->forYear(2026);
 
-        // Medium: 2 kwartalen op 85%, 2 piekmomenten, PWK repeat ~25%, AOV €95
-        $medium = $forecast->calculateScenario([
-            'Q2' => ['acq_rate' => 0.85, 'repeat_rate' => 0.25, 'repeat_aov' => 95],
-            'Q3' => ['acq_rate' => 0.85, 'repeat_rate' => 0.25, 'repeat_aov' => 95],
-            'Q4' => ['acq_rate' => 1.08, 'repeat_rate' => 0.25, 'repeat_aov' => 95],
-        ], $q1Actual);
+        $results = [];
+        foreach ($dbScenarios as $scenario) {
+            $input = $scenarioService->toForecastInput($scenario);
+            $calculated = $forecast->calculateScenario($input, $q1Actual);
+            $results[$scenario->name] = ['quarters' => $calculated['quarters'], ...$calculated['totals']];
+        }
 
-        // Best Case: elk kwartaal op/boven Q1, 3 piekmomenten, repeat bouwt op
-        $bestCase = $forecast->calculateScenario([
-            'Q2' => ['acq_rate' => 1.08, 'repeat_rate' => 0.22, 'repeat_aov' => 95],
-            'Q3' => ['acq_rate' => 1.00, 'repeat_rate' => 0.28, 'repeat_aov' => 110],
-            'Q4' => ['acq_rate' => 1.20, 'repeat_rate' => 0.32, 'repeat_aov' => 120],
-        ], $q1Actual);
-
+        // Map to the keys used by buildSections for backward compatibility
         return [
-            'voorzichtig' => ['quarters' => $voorzichtig['quarters'], ...$voorzichtig['totals']],
-            'medium' => ['quarters' => $medium['quarters'], ...$medium['totals']],
-            'best_case' => ['quarters' => $bestCase['quarters'], ...$bestCase['totals']],
+            'voorzichtig' => $results['conservative'] ?? [],
+            'medium' => $results['base'] ?? [],
+            'best_case' => $results['ambitious'] ?? [],
         ];
     }
 }

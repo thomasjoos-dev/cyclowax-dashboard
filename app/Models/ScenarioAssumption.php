@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class ProductStockSnapshot extends Model
+class ScenarioAssumption extends Model
 {
     use HasFactory;
 
@@ -18,18 +18,17 @@ class ProductStockSnapshot extends Model
     protected function casts(): array
     {
         return [
-            'qty_on_hand' => 'decimal:2',
-            'qty_forecasted' => 'decimal:2',
-            'qty_free' => 'decimal:2',
-            'recorded_at' => 'datetime',
+            'acq_rate' => 'decimal:4',
+            'repeat_rate' => 'decimal:4',
+            'repeat_aov' => 'decimal:2',
         ];
     }
 
     /**
-     * @return BelongsTo<Product, $this>
+     * @return BelongsTo<Scenario, $this>
      */
-    public function product(): BelongsTo
+    public function scenario(): BelongsTo
     {
-        return $this->belongsTo(Product::class);
+        return $this->belongsTo(Scenario::class);
     }
 }
