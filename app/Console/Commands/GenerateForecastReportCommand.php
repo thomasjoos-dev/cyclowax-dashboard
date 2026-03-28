@@ -3,23 +3,23 @@
 namespace App\Console\Commands;
 
 use App\Services\AnalysisPdfService;
+use App\Services\ForecastService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 #[Signature('forecast:revenue-report')]
 #[Description('Generate 2026 Revenue Forecast PDF with 3 scenarios')]
 class GenerateForecastReportCommand extends Command
 {
-    public function handle(AnalysisPdfService $pdf): int
+    public function handle(AnalysisPdfService $pdf, ForecastService $forecast): int
     {
         $this->info('Generating 2026 Revenue Forecast...');
 
-        $q1Actual = $this->q1Actuals();
-        $rev2025 = $this->revenue2025();
+        $q1Actual = $forecast->periodActuals('2026-01-01', '2026-04-01');
+        $rev2025 = $forecast->yearRevenue(2025);
 
-        $scenarios = $this->calculateScenarios($q1Actual, $rev2025);
+        $scenarios = $this->buildScenarios($forecast, $q1Actual);
 
         $data = [
             'title' => '2026 Revenue Forecast',
@@ -200,94 +200,40 @@ class GenerateForecastReportCommand extends Command
     }
 
     /**
-     * @return array<string, array{total: int, new_cust: int, acq_total: int, rep_total: int, rep_orders: int, quarters: array}>
+     * Build the three forecast scenarios using ForecastService.
+     *
+     * Scenario definitions (assumptions) live here — they are presentation choices.
+     * The actual calculations are delegated to ForecastService.
+     *
+     * @return array<string, array{quarters: array, totals: array}>
      */
-    private function calculateScenarios(array $q1, float $rev2025): array
+    private function buildScenarios(ForecastService $forecast, array $q1Actual): array
     {
-        // Q1 actuals (shared across all scenarios)
-        $q1Quarter = [
-            'new_cust' => 2120, 'acq_rev' => 355961,
-            'rep_orders' => 650, 'rep_rev' => 80953,
-        ];
+        // Voorzichtig: 2 kwartalen op 70%, 1 piekmoment, PWK repeat ~20%, AOV €85
+        $voorzichtig = $forecast->calculateScenario([
+            'Q2' => ['acq_rate' => 0.70, 'repeat_rate' => 0.20, 'repeat_aov' => 85],
+            'Q3' => ['acq_rate' => 0.70, 'repeat_rate' => 0.20, 'repeat_aov' => 85],
+            'Q4' => ['acq_rate' => 1.00, 'repeat_rate' => 0.20, 'repeat_aov' => 85],
+        ], $q1Actual);
 
-        // === VOORZICHTIG ===
-        // 2 kwartalen op Q1-niveau, 2 op 70%. 1 extra piekmoment. PWK repeat ~20%, AOV €85
-        $voorzichtig = [
-            'quarters' => [
-                'Q1' => $q1Quarter,
-                'Q2' => ['new_cust' => 1484, 'acq_rev' => round(355961 * 0.70), 'rep_orders' => 580, 'rep_rev' => round(580 * 85)],
-                'Q3' => ['new_cust' => 1484, 'acq_rev' => round(355961 * 0.70), 'rep_orders' => 680, 'rep_rev' => round(680 * 85)],
-                'Q4' => ['new_cust' => 2120, 'acq_rev' => 355961, 'rep_orders' => 760, 'rep_rev' => round(760 * 85)],
-            ],
-        ];
+        // Medium: 2 kwartalen op 85%, 2 piekmomenten, PWK repeat ~25%, AOV €95
+        $medium = $forecast->calculateScenario([
+            'Q2' => ['acq_rate' => 0.85, 'repeat_rate' => 0.25, 'repeat_aov' => 95],
+            'Q3' => ['acq_rate' => 0.85, 'repeat_rate' => 0.25, 'repeat_aov' => 95],
+            'Q4' => ['acq_rate' => 1.08, 'repeat_rate' => 0.25, 'repeat_aov' => 95],
+        ], $q1Actual);
 
-        // === MEDIUM ===
-        // 2 kwartalen op Q1, 2 op 85%. 2 piekmomenten. PWK repeat ~25%, AOV €95
-        $medium = [
-            'quarters' => [
-                'Q1' => $q1Quarter,
-                'Q2' => ['new_cust' => 1802, 'acq_rev' => round(355961 * 0.85), 'rep_orders' => 700, 'rep_rev' => round(700 * 95)],
-                'Q3' => ['new_cust' => 1802, 'acq_rev' => round(355961 * 0.85), 'rep_orders' => 850, 'rep_rev' => round(850 * 95)],
-                'Q4' => ['new_cust' => 2290, 'acq_rev' => round(355961 * 1.08), 'rep_orders' => 960, 'rep_rev' => round(960 * 95)],
-            ],
-        ];
-
-        // === BEST CASE ===
-        // Elk kwartaal op/boven Q1. 3 piekmomenten. PWK repeat bouwt op: 22% Q2 → 28% Q3 → 32% Q4
-        $bestCase = [
-            'quarters' => [
-                'Q1' => $q1Quarter,
-                'Q2' => ['new_cust' => 2290, 'acq_rev' => round(355961 * 1.08), 'rep_orders' => 750, 'rep_rev' => round(750 * 95)],
-                'Q3' => ['new_cust' => 2120, 'acq_rev' => 355961, 'rep_orders' => 1000, 'rep_rev' => round(1000 * 110)],
-                'Q4' => ['new_cust' => 2544, 'acq_rev' => round(355961 * 1.20), 'rep_orders' => 1150, 'rep_rev' => round(1150 * 120)],
-            ],
-        ];
-
-        // Calculate totals
-        foreach ([&$voorzichtig, &$medium, &$bestCase] as &$scenario) {
-            $scenario['new_cust'] = collect($scenario['quarters'])->sum('new_cust');
-            $scenario['acq_total'] = collect($scenario['quarters'])->sum('acq_rev');
-            $scenario['rep_orders'] = collect($scenario['quarters'])->sum('rep_orders');
-            $scenario['rep_total'] = collect($scenario['quarters'])->sum('rep_rev');
-            $scenario['total'] = $scenario['acq_total'] + $scenario['rep_total'];
-        }
+        // Best Case: elk kwartaal op/boven Q1, 3 piekmomenten, repeat bouwt op
+        $bestCase = $forecast->calculateScenario([
+            'Q2' => ['acq_rate' => 1.08, 'repeat_rate' => 0.22, 'repeat_aov' => 95],
+            'Q3' => ['acq_rate' => 1.00, 'repeat_rate' => 0.28, 'repeat_aov' => 110],
+            'Q4' => ['acq_rate' => 1.20, 'repeat_rate' => 0.32, 'repeat_aov' => 120],
+        ], $q1Actual);
 
         return [
-            'voorzichtig' => $voorzichtig,
-            'medium' => $medium,
-            'best_case' => $bestCase,
+            'voorzichtig' => ['quarters' => $voorzichtig['quarters'], ...$voorzichtig['totals']],
+            'medium' => ['quarters' => $medium['quarters'], ...$medium['totals']],
+            'best_case' => ['quarters' => $bestCase['quarters'], ...$bestCase['totals']],
         ];
-    }
-
-    /**
-     * @return array{total_rev: int, acq_rev: int, rep_rev: int}
-     */
-    private function q1Actuals(): array
-    {
-        $r = DB::selectOne("
-            SELECT
-                ROUND(SUM(net_revenue), 0) as total_rev,
-                ROUND(SUM(CASE WHEN is_first_order = 1 THEN net_revenue ELSE 0 END), 0) as acq_rev,
-                ROUND(SUM(CASE WHEN is_first_order = 0 THEN net_revenue ELSE 0 END), 0) as rep_rev
-            FROM shopify_orders
-            WHERE ordered_at >= '2026-01-01' AND ordered_at < '2026-04-01'
-                AND financial_status NOT IN ('voided', 'refunded')
-        ");
-
-        return [
-            'total_rev' => (int) $r->total_rev,
-            'acq_rev' => (int) $r->acq_rev,
-            'rep_rev' => (int) $r->rep_rev,
-        ];
-    }
-
-    private function revenue2025(): float
-    {
-        return (float) DB::selectOne("
-            SELECT ROUND(SUM(net_revenue), 0) as rev
-            FROM shopify_orders
-            WHERE ordered_at >= '2025-01-01' AND ordered_at < '2026-01-01'
-                AND financial_status NOT IN ('voided', 'refunded')
-        ")->rev;
     }
 }
