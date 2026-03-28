@@ -4,18 +4,25 @@ namespace App\Console\Commands;
 
 use App\Enums\ProductCategory;
 use App\Services\AnalysisPdfService;
+use App\Services\ProductPathwayService;
 use App\Services\ProductPortfolioService;
+use App\Services\PurchaseLadderService;
+use App\Services\RepeatProbabilityService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 #[Signature('products:portfolio-report')]
 #[Description('Generate Portfolio Product Map PDF report')]
 class GeneratePortfolioReportCommand extends Command
 {
-    public function handle(ProductPortfolioService $portfolio, AnalysisPdfService $pdf): int
-    {
+    public function handle(
+        ProductPortfolioService $portfolio,
+        AnalysisPdfService $pdf,
+        PurchaseLadderService $ladderService,
+        RepeatProbabilityService $repeatService,
+        ProductPathwayService $pathwayService,
+    ): int {
         $this->info('Generating Portfolio Product Map report...');
 
         $scorecard = $portfolio->portfolioScorecard();
@@ -23,11 +30,11 @@ class GeneratePortfolioReportCommand extends Command
         $transitions = $portfolio->transitionMatrix();
         $productTransitions = $portfolio->transitionMatrix(drillDown: true);
         $timing = $portfolio->timingProfile();
-        $ladder = $this->purchaseLadder();
-        $repeatProbability = $this->repeatProbabilityPerCategory();
-        $starterKitPathways = $this->productPathways('starter_kit');
-        $waxKitPathways = $this->productPathways('wax_kit');
-        $threeStepJourney = $this->threeStepJourney();
+        $ladder = $ladderService->ladder();
+        $repeatProbability = $repeatService->byCategory();
+        $starterKitPathways = $pathwayService->nextPurchase('starter_kit');
+        $waxKitPathways = $pathwayService->nextPurchase('wax_kit');
+        $threeStepJourney = $pathwayService->threeStepJourney();
 
         $totalCustomers = collect($ladder)->sum('customers');
         $totalRevenue = collect($ladder)->sum('total_revenue');
@@ -317,176 +324,5 @@ class GeneratePortfolioReportCommand extends Command
         ]];
 
         return $sections;
-    }
-
-    /**
-     * @return array<int, array{label: string, order_count: int, customers: int, avg_ltv: float, total_revenue: float}>
-     */
-    private function purchaseLadder(): array
-    {
-        $rows = DB::select("
-            SELECT
-                order_count,
-                COUNT(*) as customers,
-                ROUND(AVG(total_ltv), 0) as avg_ltv,
-                ROUND(SUM(total_ltv), 0) as total_revenue
-            FROM (
-                SELECT
-                    sc.id,
-                    COUNT(so.id) as order_count,
-                    SUM(so.net_revenue) as total_ltv
-                FROM shopify_customers sc
-                INNER JOIN shopify_orders so ON so.customer_id = sc.id
-                WHERE so.ordered_at >= '2024-01-01'
-                    AND so.financial_status NOT IN ('voided', 'refunded')
-                GROUP BY sc.id
-            )
-            GROUP BY order_count
-            ORDER BY order_count
-        ");
-
-        $result = [];
-        foreach ($rows as $row) {
-            $oc = (int) $row->order_count;
-            if ($oc <= 4) {
-                $result[] = [
-                    'label' => $oc.($oc === 1 ? ' order' : ' orders'),
-                    'order_count' => $oc,
-                    'customers' => (int) $row->customers,
-                    'avg_ltv' => (float) $row->avg_ltv,
-                    'total_revenue' => (float) $row->total_revenue,
-                ];
-            } else {
-                // Aggregate 5+
-                if (isset($result[4])) {
-                    $result[4]['customers'] += (int) $row->customers;
-                    $result[4]['total_revenue'] += (float) $row->total_revenue;
-                    $result[4]['avg_ltv'] = round($result[4]['total_revenue'] / $result[4]['customers']);
-                } else {
-                    $result[] = [
-                        'label' => '5+ orders',
-                        'order_count' => 5,
-                        'customers' => (int) $row->customers,
-                        'avg_ltv' => (float) $row->avg_ltv,
-                        'total_revenue' => (float) $row->total_revenue,
-                    ];
-                }
-            }
-        }
-
-        return $result;
-    }
-
-    /**
-     * @return array<int, object>
-     */
-    private function repeatProbabilityPerCategory(): array
-    {
-        return DB::select("
-            WITH first_order_products AS (
-                SELECT DISTINCT so.customer_id, p.product_category
-                FROM shopify_orders so
-                INNER JOIN shopify_line_items sli ON sli.order_id = so.id
-                INNER JOIN products p ON p.id = sli.product_id
-                WHERE so.is_first_order = 1
-                    AND so.ordered_at >= '2024-01-01'
-                    AND so.financial_status NOT IN ('voided', 'refunded')
-                    AND p.product_category IN ('starter_kit', 'wax_kit', 'chain', 'wax_tablet', 'pocket_wax')
-            ),
-            customer_orders AS (
-                SELECT customer_id, COUNT(*) as order_count, SUM(net_revenue) as total_ltv
-                FROM shopify_orders
-                WHERE ordered_at >= '2024-01-01' AND financial_status NOT IN ('voided', 'refunded')
-                GROUP BY customer_id
-            )
-            SELECT
-                fop.product_category,
-                COUNT(DISTINCT fop.customer_id) as total_customers,
-                ROUND(COUNT(DISTINCT CASE WHEN co.order_count >= 2 THEN fop.customer_id END) * 100.0 / COUNT(DISTINCT fop.customer_id), 1) as pct_2nd,
-                ROUND(COUNT(DISTINCT CASE WHEN co.order_count >= 3 THEN fop.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN co.order_count >= 2 THEN fop.customer_id END), 0), 1) as pct_3rd_given_2nd,
-                ROUND(AVG(co.total_ltv), 0) as avg_ltv,
-                ROUND(AVG(CASE WHEN co.order_count >= 2 THEN co.total_ltv END), 0) as avg_ltv_repeaters
-            FROM first_order_products fop
-            INNER JOIN customer_orders co ON co.customer_id = fop.customer_id
-            GROUP BY fop.product_category
-            ORDER BY pct_2nd DESC
-        ");
-    }
-
-    /**
-     * @return array<int, object>
-     */
-    private function productPathways(string $category): array
-    {
-        return DB::select("
-            WITH customer_orders AS (
-                SELECT customer_id, id as order_id, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY ordered_at) as order_num
-                FROM shopify_orders so
-                WHERE so.ordered_at >= '2024-01-01' AND so.financial_status NOT IN ('voided', 'refunded') AND so.customer_id IS NOT NULL
-            ),
-            first_second AS (
-                SELECT co1.customer_id, co1.order_id as first_order_id, co2.order_id as second_order_id
-                FROM customer_orders co1
-                INNER JOIN customer_orders co2 ON co2.customer_id = co1.customer_id AND co2.order_num = 2
-                WHERE co1.order_num = 1
-            )
-            SELECT sli2.product_title, p2.product_category, COUNT(*) as cnt,
-                ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 1) as pct
-            FROM first_second fs
-            INNER JOIN shopify_line_items sli1 ON sli1.order_id = fs.first_order_id
-            INNER JOIN products p1 ON p1.id = sli1.product_id
-            INNER JOIN shopify_line_items sli2 ON sli2.order_id = fs.second_order_id
-            INNER JOIN products p2 ON p2.id = sli2.product_id
-            WHERE p1.product_category = '{$category}'
-                AND p2.product_category NOT IN ('promotional', 'gift_card')
-            GROUP BY sli2.product_title, p2.product_category
-            HAVING cnt >= 5
-            ORDER BY cnt DESC
-        ");
-    }
-
-    /**
-     * @return array<int, object>
-     */
-    private function threeStepJourney(): array
-    {
-        // Optimized: first determine dominant category per order, then join
-        return DB::select("
-            WITH order_categories AS (
-                SELECT sli.order_id, p.product_category,
-                    ROW_NUMBER() OVER (PARTITION BY sli.order_id ORDER BY sli.price * sli.quantity DESC) as rn
-                FROM shopify_line_items sli
-                INNER JOIN products p ON p.id = sli.product_id
-                WHERE p.product_category NOT IN ('promotional', 'gift_card')
-                    AND p.product_category IS NOT NULL
-            ),
-            order_main_cat AS (
-                SELECT order_id, product_category FROM order_categories WHERE rn = 1
-            ),
-            customer_journey AS (
-                SELECT
-                    so.customer_id,
-                    so.id as order_id,
-                    ROW_NUMBER() OVER (PARTITION BY so.customer_id ORDER BY so.ordered_at) as n
-                FROM shopify_orders so
-                WHERE so.ordered_at >= '2024-01-01'
-                    AND so.financial_status NOT IN ('voided', 'refunded')
-                    AND so.customer_id IS NOT NULL
-            )
-            SELECT
-                oc2.product_category as step2,
-                oc3.product_category as step3,
-                COUNT(*) as customers
-            FROM customer_journey cj1
-            INNER JOIN customer_journey cj2 ON cj2.customer_id = cj1.customer_id AND cj2.n = 2
-            INNER JOIN customer_journey cj3 ON cj3.customer_id = cj1.customer_id AND cj3.n = 3
-            INNER JOIN order_main_cat oc1 ON oc1.order_id = cj1.order_id AND oc1.product_category = 'starter_kit'
-            INNER JOIN order_main_cat oc2 ON oc2.order_id = cj2.order_id
-            INNER JOIN order_main_cat oc3 ON oc3.order_id = cj3.order_id
-            WHERE cj1.n = 1
-            GROUP BY step2, step3
-            HAVING customers >= 5
-            ORDER BY customers DESC
-        ");
     }
 }
