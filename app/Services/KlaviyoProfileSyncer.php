@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\KlaviyoProfile;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -15,18 +16,25 @@ class KlaviyoProfileSyncer
     ) {}
 
     /**
-     * Sync all profiles from Klaviyo, including predictive analytics.
+     * Sync profiles from Klaviyo, including predictive analytics.
+     * When $since is provided, only profiles updated after that timestamp are fetched.
      */
-    public function sync(): int
+    public function sync(?CarbonImmutable $since = null): int
     {
         $this->syncedCount = 0;
 
-        Log::info('Klaviyo profile sync starting');
+        Log::info('Klaviyo profile sync starting', ['incremental' => $since !== null]);
 
-        $profiles = $this->klaviyo->paginate('profiles', [
+        $query = [
             'additional-fields[profile]' => 'predictive_analytics',
             'page[size]' => 100,
-        ]);
+        ];
+
+        if ($since) {
+            $query['filter'] = "greater-than(updated,{$since->subMinutes(5)->toIso8601String()})";
+        }
+
+        $profiles = $this->klaviyo->paginate('profiles', $query);
 
         $batch = [];
 

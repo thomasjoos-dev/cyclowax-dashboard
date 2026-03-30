@@ -21,20 +21,28 @@ class KlaviyoEngagementSyncer
         'Checkout Started' => 'checkouts_started',
     ];
 
+    protected bool $isIncremental = false;
+
     public function __construct(
         protected KlaviyoClient $klaviyo,
     ) {}
 
     /**
      * Sync engagement and intent event counts from Klaviyo using bulk metric fetching.
-     * Instead of querying per profile (~51k API calls), we query per metric type
-     * and aggregate counts in-memory (~10k API calls, 5-17x faster).
+     * When $since is provided, only events after that timestamp are fetched and counts
+     * are added to existing values (incremental). When null, the full 6-month window
+     * is used and counts are replaced (full sync).
      */
-    public function sync(): int
+    public function sync(?CarbonImmutable $since = null): int
     {
-        Log::info('Klaviyo engagement sync starting (bulk mode)');
+        $this->isIncremental = $since !== null;
+        $eventsSince = $since?->subMinutes(5) ?? CarbonImmutable::now()->subMonths(6);
 
-        $since = CarbonImmutable::now()->subMonths(6);
+        Log::info('Klaviyo engagement sync starting', [
+            'mode' => $this->isIncremental ? 'incremental' : 'full',
+            'since' => $eventsSince->toDateTimeString(),
+        ]);
+
         $metricIds = $this->resolveMetricIds();
 
         if (empty($metricIds)) {
@@ -56,7 +64,7 @@ class KlaviyoEngagementSyncer
             $column = self::TRACKED_EVENTS[$metricName];
             $eventCount = 0;
 
-            $this->paginateEvents($metricId, $since, function (array $event) use ($followerKlaviyoIds, $column, &$profileCounts, &$eventCount) {
+            $this->paginateEvents($metricId, $eventsSince, function (array $event) use ($followerKlaviyoIds, $column, &$profileCounts, &$eventCount) {
                 $profileId = $event['relationships']['profile']['data']['id'] ?? null;
 
                 if (! $profileId || ! isset($followerKlaviyoIds[$profileId])) {
@@ -73,7 +81,10 @@ class KlaviyoEngagementSyncer
         // Batch update profiles
         $updatedCount = $this->updateProfiles($profileCounts);
 
-        Log::info('Klaviyo engagement sync completed (bulk mode)', ['profiles_updated' => $updatedCount]);
+        Log::info('Klaviyo engagement sync completed', [
+            'mode' => $this->isIncremental ? 'incremental' : 'full',
+            'profiles_updated' => $updatedCount,
+        ]);
 
         return $updatedCount;
     }
@@ -179,6 +190,7 @@ class KlaviyoEngagementSyncer
 
     /**
      * Batch update KlaviyoProfile records with aggregated event counts.
+     * In full mode: replaces counts. In incremental mode: adds to existing counts.
      *
      * @param  array<string, array<string, int>>  $profileCounts
      */
@@ -206,7 +218,13 @@ class KlaviyoEngagementSyncer
                     $updateData = ['engagement_synced_at' => now()];
 
                     foreach ($columns as $column) {
-                        $updateData[$column] = $counts[$column] ?? 0;
+                        $increment = $counts[$column] ?? 0;
+
+                        if ($this->isIncremental && $increment > 0) {
+                            $updateData[$column] = DB::raw("{$column} + {$increment}");
+                        } elseif (! $this->isIncremental) {
+                            $updateData[$column] = $increment;
+                        }
                     }
 
                     KlaviyoProfile::query()->where('id', $profile->id)->update($updateData);
@@ -215,20 +233,22 @@ class KlaviyoEngagementSyncer
             });
         }
 
-        // Mark remaining follower profiles (with no events) as synced
-        $customerEmails = ShopifyCustomer::query()
-            ->whereNotNull('email')
-            ->pluck('email')
-            ->map(fn (string $email) => strtolower($email));
+        // In full mode: mark remaining follower profiles (with no events) as synced
+        if (! $this->isIncremental) {
+            $customerEmails = ShopifyCustomer::query()
+                ->whereNotNull('email')
+                ->pluck('email')
+                ->map(fn (string $email) => strtolower($email));
 
-        $zeroUpdated = KlaviyoProfile::query()
-            ->whereNull('engagement_synced_at')
-            ->whereNotNull('email')
-            ->where('email', '!=', '')
-            ->whereNotIn(DB::raw('LOWER(email)'), $customerEmails)
-            ->update(['engagement_synced_at' => now()]);
+            $zeroUpdated = KlaviyoProfile::query()
+                ->whereNull('engagement_synced_at')
+                ->whereNotNull('email')
+                ->where('email', '!=', '')
+                ->whereNotIn(DB::raw('LOWER(email)'), $customerEmails)
+                ->update(['engagement_synced_at' => now()]);
 
-        $updatedCount += $zeroUpdated;
+            $updatedCount += $zeroUpdated;
+        }
 
         return $updatedCount;
     }

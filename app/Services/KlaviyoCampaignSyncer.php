@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\KlaviyoCampaign;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -16,14 +17,18 @@ class KlaviyoCampaignSyncer
         protected KlaviyoClient $klaviyo,
     ) {}
 
+    protected ?CarbonImmutable $since = null;
+
     /**
-     * Sync all email campaigns from Klaviyo, then enrich sent campaigns with metrics.
+     * Sync email campaigns from Klaviyo, then enrich sent campaigns with metrics.
+     * When $since is provided, only campaigns updated after that timestamp are fetched.
      */
-    public function sync(): int
+    public function sync(?CarbonImmutable $since = null): int
     {
         $this->syncedCount = 0;
+        $this->since = $since;
 
-        Log::info('Klaviyo campaign sync starting');
+        Log::info('Klaviyo campaign sync starting', ['incremental' => $since !== null]);
 
         $this->syncCampaigns();
         $this->enrichSentCampaignsWithMetrics();
@@ -38,8 +43,14 @@ class KlaviyoCampaignSyncer
      */
     protected function syncCampaigns(): void
     {
+        $filter = "equals(messages.channel,'email')";
+
+        if ($this->since) {
+            $filter .= ",greater-than(updated_at,{$this->since->subMinutes(5)->toIso8601String()})";
+        }
+
         $campaigns = $this->klaviyo->paginate('campaigns', [
-            'filter' => "equals(messages.channel,'email')",
+            'filter' => $filter,
         ]);
 
         $batch = [];

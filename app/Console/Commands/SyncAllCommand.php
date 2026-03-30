@@ -2,21 +2,30 @@
 
 namespace App\Console\Commands;
 
+use App\Models\SyncState;
 use App\Services\DashboardService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
-#[Signature('sync:all')]
+#[Signature('sync:all {--full : Force full sync for all steps, bypassing incremental logic}')]
 #[Description('Run the full daily sync pipeline: Shopify → Odoo → Klaviyo → margins → RFM → profiles')]
 class SyncAllCommand extends Command
 {
+    private const FULL_SYNC_COMMANDS = [
+        'klaviyo:sync-profiles',
+        'klaviyo:sync-campaigns',
+        'klaviyo:sync-engagement',
+        'orders:compute-margins',
+    ];
+
     public function handle(): int
     {
         $pipelineStart = microtime(true);
+        $isFull = (bool) $this->option('full');
 
-        $this->components->info('Starting sync pipeline...');
+        $this->components->info('Starting sync pipeline'.($isFull ? ' (full sync)' : ' (incremental)').'...');
 
         $steps = [
             ['shopify:sync-orders', 'Shopify order sync'],
@@ -37,7 +46,7 @@ class SyncAllCommand extends Command
         $failures = 0;
 
         foreach ($steps as [$command, $label]) {
-            $this->runStep($command, $label, $failures);
+            $this->runStep($command, $label, $isFull, $failures);
         }
 
         app(DashboardService::class)->flushCache();
@@ -55,12 +64,12 @@ class SyncAllCommand extends Command
         }
 
         $this->components->info("Pipeline completed successfully in {$duration}s.");
-        Log::info('Sync pipeline completed', ['duration' => $duration]);
+        Log::info('Sync pipeline completed', ['duration' => $duration, 'full' => $isFull]);
 
         return self::SUCCESS;
     }
 
-    protected function runStep(string $command, string $label, int &$failures): void
+    protected function runStep(string $command, string $label, bool $isFull, int &$failures): void
     {
         $this->newLine();
         $this->components->info("[{$label}]");
@@ -68,7 +77,12 @@ class SyncAllCommand extends Command
         $start = microtime(true);
 
         try {
-            $exitCode = $this->call($command);
+            $arguments = [];
+            if ($isFull && in_array($command, self::FULL_SYNC_COMMANDS)) {
+                $arguments['--full'] = true;
+            }
+
+            $exitCode = $this->call($command, $arguments);
             $duration = round(microtime(true) - $start, 1);
 
             if ($exitCode !== self::SUCCESS) {
@@ -76,6 +90,15 @@ class SyncAllCommand extends Command
                 Log::error("Sync step failed: {$label}", ['command' => $command, 'exit_code' => $exitCode]);
                 $failures++;
             } else {
+                SyncState::updateOrCreate(
+                    ['step' => $command],
+                    [
+                        'last_synced_at' => now(),
+                        'duration_seconds' => $duration,
+                        'was_full_sync' => $isFull,
+                    ],
+                );
+
                 $this->components->info("{$label} completed in {$duration}s.");
             }
         } catch (\Throwable $e) {

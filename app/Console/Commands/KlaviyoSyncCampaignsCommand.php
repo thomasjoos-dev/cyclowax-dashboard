@@ -2,13 +2,14 @@
 
 namespace App\Console\Commands;
 
+use App\Models\SyncState;
 use App\Services\KlaviyoCampaignSyncer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-#[Signature('klaviyo:sync-campaigns')]
+#[Signature('klaviyo:sync-campaigns {--full : Bypass incremental sync and fetch all campaigns}')]
 #[Description('Sync email campaigns and metrics from the Klaviyo API')]
 class KlaviyoSyncCampaignsCommand extends Command
 {
@@ -17,10 +18,12 @@ class KlaviyoSyncCampaignsCommand extends Command
      */
     public function handle(KlaviyoCampaignSyncer $syncer): int
     {
-        $this->components->info('Syncing Klaviyo campaigns...');
+        $since = $this->option('full') ? null : SyncState::lastSyncedAt('klaviyo:sync-campaigns');
+
+        $this->components->info('Syncing Klaviyo campaigns'.($since ? " (incremental since {$since->toDateTimeString()})" : ' (full)').'...');
 
         try {
-            $count = $syncer->sync();
+            $count = $syncer->sync($since);
 
             $this->components->info("Synced {$count} campaigns.");
 

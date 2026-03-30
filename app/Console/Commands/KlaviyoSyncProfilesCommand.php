@@ -2,13 +2,14 @@
 
 namespace App\Console\Commands;
 
+use App\Models\SyncState;
 use App\Services\KlaviyoProfileSyncer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-#[Signature('klaviyo:sync-profiles')]
+#[Signature('klaviyo:sync-profiles {--full : Bypass incremental sync and fetch all profiles}')]
 #[Description('Sync customer profiles from the Klaviyo API')]
 class KlaviyoSyncProfilesCommand extends Command
 {
@@ -17,10 +18,12 @@ class KlaviyoSyncProfilesCommand extends Command
      */
     public function handle(KlaviyoProfileSyncer $syncer): int
     {
-        $this->components->info('Syncing Klaviyo profiles...');
+        $since = $this->option('full') ? null : SyncState::lastSyncedAt('klaviyo:sync-profiles');
+
+        $this->components->info('Syncing Klaviyo profiles'.($since ? " (incremental since {$since->toDateTimeString()})" : ' (full)').'...');
 
         try {
-            $count = $syncer->sync();
+            $count = $syncer->sync($since);
 
             $this->components->info("Synced {$count} profiles.");
 

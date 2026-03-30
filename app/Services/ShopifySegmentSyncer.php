@@ -53,24 +53,28 @@ class ShopifySegmentSyncer
             });
         }
 
-        $profiles = $query->with('shopifyCustomer:id,shopify_id')
-            ->select(['id', 'segment', 'shopify_customer_id'])
-            ->get();
+        $totalToSync = $query->count();
 
-        if ($profiles->isEmpty()) {
+        if ($totalToSync === 0) {
             Log::info("Shopify segment sync: no profiles to sync ({$mode})");
 
             return 0;
         }
 
-        $this->removeOldTags($profiles);
-        $this->addNewTags($profiles);
+        Log::info("Shopify segment sync: processing {$totalToSync} profiles in chunks");
 
-        $now = Carbon::now();
-        RiderProfile::whereIn('id', $profiles->pluck('id'))
-            ->update(['shopify_synced_at' => $now]);
+        $query->with('shopifyCustomer:id,shopify_id')
+            ->select(['id', 'segment', 'shopify_customer_id'])
+            ->chunkById(2000, function ($profiles) {
+                $this->removeOldTags($profiles);
+                $this->addNewTags($profiles);
 
-        $this->syncedCount = $profiles->count();
+                $now = Carbon::now();
+                RiderProfile::whereIn('id', $profiles->pluck('id'))
+                    ->update(['shopify_synced_at' => $now]);
+
+                $this->syncedCount += $profiles->count();
+            });
 
         Log::info("Shopify segment sync completed ({$mode})", [
             'customers' => $this->syncedCount,
@@ -85,29 +89,21 @@ class ShopifySegmentSyncer
     protected function removeOldTags($profiles): void
     {
         $allTags = $this->getAllSegmentTags();
+        $mutation = 'mutation tagsRemove($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { node { id } userErrors { field message } } }';
 
-        $jsonlLines = [];
-
-        foreach ($profiles as $profile) {
-            $gid = "gid://shopify/Customer/{$profile->shopifyCustomer->shopify_id}";
-            $jsonlLines[] = json_encode([
+        foreach ($profiles->chunk(2000) as $chunk) {
+            $jsonl = $chunk->map(fn ($profile) => json_encode([
                 'input' => [
-                    'id' => $gid,
+                    'id' => "gid://shopify/Customer/{$profile->shopifyCustomer->shopify_id}",
                     'tags' => $allTags,
                 ],
-            ]);
+            ]))->implode("\n");
+
+            Log::info('Shopify: removing old cw: tags', ['customers' => $chunk->count()]);
+
+            $operation = $this->client->bulkMutation($mutation, $jsonl);
+            $this->waitForBulkOperation($operation);
         }
-
-        $jsonl = implode("\n", $jsonlLines);
-
-        Log::info('Shopify: removing old cw: tags', ['customers' => count($jsonlLines)]);
-
-        $operation = $this->client->bulkMutation(
-            'mutation tagsRemove($id: ID!, $tags: [String!]!) { tagsRemove(id: $id, tags: $tags) { node { id } userErrors { field message } } }',
-            $jsonl,
-        );
-
-        $this->waitForBulkOperation($operation);
     }
 
     /**
@@ -115,30 +111,21 @@ class ShopifySegmentSyncer
      */
     protected function addNewTags($profiles): void
     {
-        $jsonlLines = [];
+        $mutation = 'mutation tagsAdd($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { node { id } userErrors { field message } } }';
 
-        foreach ($profiles as $profile) {
-            $gid = "gid://shopify/Customer/{$profile->shopifyCustomer->shopify_id}";
-            $tag = "cw:{$profile->segment}";
-
-            $jsonlLines[] = json_encode([
+        foreach ($profiles->chunk(2000) as $chunk) {
+            $jsonl = $chunk->map(fn ($profile) => json_encode([
                 'input' => [
-                    'id' => $gid,
-                    'tags' => [$tag],
+                    'id' => "gid://shopify/Customer/{$profile->shopifyCustomer->shopify_id}",
+                    'tags' => ["cw:{$profile->segment}"],
                 ],
-            ]);
+            ]))->implode("\n");
+
+            Log::info('Shopify: adding new cw: tags', ['customers' => $chunk->count()]);
+
+            $operation = $this->client->bulkMutation($mutation, $jsonl);
+            $this->waitForBulkOperation($operation);
         }
-
-        $jsonl = implode("\n", $jsonlLines);
-
-        Log::info('Shopify: adding new cw: tags', ['customers' => count($jsonlLines)]);
-
-        $operation = $this->client->bulkMutation(
-            'mutation tagsAdd($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { node { id } userErrors { field message } } }',
-            $jsonl,
-        );
-
-        $this->waitForBulkOperation($operation);
     }
 
     /**
