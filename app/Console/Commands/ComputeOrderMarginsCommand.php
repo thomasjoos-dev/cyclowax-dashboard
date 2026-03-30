@@ -202,13 +202,15 @@ class ComputeOrderMarginsCommand extends Command
             ->whereNotNull('customer_id')
             ->orderBy('ordered_at')
             ->chunkById(500, function ($orders) use (&$classified) {
-                foreach ($orders as $order) {
-                    $earlierOrderExists = ShopifyOrder::query()
-                        ->where('customer_id', $order->customer_id)
-                        ->where('ordered_at', '<', $order->ordered_at)
-                        ->exists();
+                $firstOrderDates = ShopifyOrder::query()
+                    ->whereIn('customer_id', $orders->pluck('customer_id')->unique())
+                    ->groupBy('customer_id')
+                    ->selectRaw('customer_id, MIN(ordered_at) as first_ordered_at')
+                    ->pluck('first_ordered_at', 'customer_id');
 
-                    $order->update(['is_first_order' => ! $earlierOrderExists]);
+                foreach ($orders as $order) {
+                    $isFirst = $order->ordered_at <= ($firstOrderDates[$order->customer_id] ?? $order->ordered_at);
+                    $order->update(['is_first_order' => $isFirst]);
                     $classified++;
                 }
             });
@@ -279,20 +281,28 @@ class ComputeOrderMarginsCommand extends Command
 
         ShopifyCustomer::query()
             ->chunkById(500, function ($customers) use (&$updated) {
-                foreach ($customers as $customer) {
-                    $stats = DB::table('shopify_orders')
-                        ->where('customer_id', $customer->id)
-                        ->selectRaw('COUNT(*) as order_count, COALESCE(SUM(total_cost), 0) as total_cost')
-                        ->first();
+                $customerIds = $customers->pluck('id');
 
-                    $firstOrder = ShopifyOrder::query()
-                        ->where('customer_id', $customer->id)
-                        ->where('is_first_order', true)
-                        ->first(['channel_type', 'refined_channel']);
+                $stats = DB::table('shopify_orders')
+                    ->whereIn('customer_id', $customerIds)
+                    ->groupBy('customer_id')
+                    ->selectRaw('customer_id, COUNT(*) as order_count, COALESCE(SUM(total_cost), 0) as total_cost')
+                    ->get()
+                    ->keyBy('customer_id');
+
+                $firstOrders = ShopifyOrder::query()
+                    ->whereIn('customer_id', $customerIds)
+                    ->where('is_first_order', true)
+                    ->get(['customer_id', 'channel_type', 'refined_channel'])
+                    ->keyBy('customer_id');
+
+                foreach ($customers as $customer) {
+                    $stat = $stats[$customer->id] ?? null;
+                    $firstOrder = $firstOrders[$customer->id] ?? null;
 
                     $customer->update([
-                        'local_orders_count' => $stats->order_count,
-                        'total_cost' => $stats->total_cost,
+                        'local_orders_count' => $stat?->order_count ?? 0,
+                        'total_cost' => $stat?->total_cost ?? 0,
                         'first_order_channel' => $firstOrder?->refined_channel ?? $firstOrder?->channel_type,
                     ]);
 
