@@ -1,0 +1,82 @@
+<?php
+
+use App\Enums\ProductCategory;
+use App\Models\Scenario;
+use App\Models\ScenarioProductMix;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
+
+it('belongs to a scenario', function () {
+    $scenario = Scenario::factory()->create();
+    $mix = ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::WaxTablet->value,
+        'acq_share' => 0.15,
+        'repeat_share' => 0.35,
+        'avg_unit_price' => 27.50,
+    ]);
+
+    expect($mix->scenario->id)->toBe($scenario->id)
+        ->and($mix->product_category)->toBe(ProductCategory::WaxTablet);
+});
+
+it('loads product mixes from scenario', function () {
+    $scenario = Scenario::factory()->create();
+
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::StarterKit->value,
+        'acq_share' => 0.40,
+        'repeat_share' => 0.05,
+        'avg_unit_price' => 220.00,
+    ]);
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::WaxTablet->value,
+        'acq_share' => 0.10,
+        'repeat_share' => 0.35,
+        'avg_unit_price' => 27.50,
+    ]);
+
+    $scenario->load('productMixes');
+
+    expect($scenario->productMixes)->toHaveCount(2);
+});
+
+it('enforces unique constraint on scenario and category', function () {
+    $scenario = Scenario::factory()->create();
+
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::Chain->value,
+        'acq_share' => 0.10,
+        'repeat_share' => 0.30,
+        'avg_unit_price' => 85.00,
+    ]);
+
+    expect(fn () => ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::Chain->value,
+        'acq_share' => 0.20,
+        'repeat_share' => 0.40,
+        'avg_unit_price' => 90.00,
+    ]))->toThrow(UniqueConstraintViolationException::class);
+});
+
+it('cascades delete when scenario is deleted', function () {
+    $scenario = Scenario::factory()->create();
+
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::WaxTablet->value,
+        'acq_share' => 0.10,
+        'repeat_share' => 0.35,
+        'avg_unit_price' => 27.50,
+    ]);
+
+    $scenario->delete();
+
+    expect(ScenarioProductMix::count())->toBe(0);
+});

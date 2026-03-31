@@ -33,6 +33,14 @@ class Scenario extends Model
     }
 
     /**
+     * @return HasMany<ScenarioProductMix, $this>
+     */
+    public function productMixes(): HasMany
+    {
+        return $this->hasMany(ScenarioProductMix::class);
+    }
+
+    /**
      * @param  Builder<Scenario>  $query
      */
     public function scopeActive(Builder $query): void

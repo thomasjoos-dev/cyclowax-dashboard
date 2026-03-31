@@ -41,6 +41,18 @@ enum ProductCategory: string
         };
     }
 
+    public function forecastGroup(): ?ForecastGroup
+    {
+        return match ($this) {
+            self::WaxTablet, self::PocketWax => ForecastGroup::RideActivity,
+            self::StarterKit, self::WaxKit => ForecastGroup::GettingStarted,
+            self::Chain, self::ChainConsumable, self::ChainTool => ForecastGroup::ChainWear,
+            self::Heater, self::HeaterAccessory, self::Cleaning, self::MultiTool, self::Accessory => ForecastGroup::Companion,
+            self::Bundle => ForecastGroup::GettingStarted,
+            self::GiftCard, self::Promotional => null,
+        };
+    }
+
     public function ecosystem(): string
     {
         return match ($this) {

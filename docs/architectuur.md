@@ -105,6 +105,39 @@ Seasonal Indices
   └── CalculateSeasonalIndicesCommand (artisan)
         └── SeasonalIndexCalculator (monthly normalisatie → avg = 1.0)
 
+Demand Forecast System
+  ├── CalculateCategorySeasonalIndicesCommand (forecast:calculate-seasonal)
+  │     └── CategorySeasonalCalculator
+  │           ├── Seizoensindexen per ProductCategory, geschoond voor DemandEvents
+  │           ├── Gewogen groepsgemiddelde per ForecastGroup
+  │           ├── Maturity-based fallback: Launch→groep, Ramping→mix, Mature→eigen
+  │           └── DemandEventService (historische events als exclusie-filter)
+  ├── GenerateDemandForecastCommand (forecast:generate {scenario})
+  │     ├── DemandForecastService (kernberekening)
+  │     │     ├── baseline (vorig jaar) × scenario growth × product mix × seasonal index
+  │     │     ├── + DemandEvent boost (geplande campagnes/launches)
+  │     │     ├── - Pull-forward deductie (alleen Getting Started categorieën)
+  │     │     └── → units + revenue per ProductCategory per maand
+  │     └── ForecastTrackingService (snapshot opslag)
+  │           ├── recordSnapshot() — forecast opslaan als ForecastSnapshot rijen
+  │           ├── updateActuals() — werkelijke cijfers invullen na afloop maand
+  │           ├── monthlyVariance() — forecast vs actuals + variance%
+  │           └── paceProjection() — bijgestelde jaarprojectie op basis van YTD
+  ├── UpdateForecastActualsCommand (forecast:update-actuals {YYYY-MM})
+  │     └── ForecastTrackingService.updateActuals()
+  └── GeneratePurchaseScheduleCommand (forecast:purchase-schedule {scenario})
+        └── StockPlanningService
+              ├── demand forecast + huidige voorraad + SupplyConfig (lead time, MOQ, buffer)
+              ├── purchaseSchedule() → bestelmoment + hoeveelheid per categorie
+              ├── categoryRunway() → forward-looking runway per categorie
+              └── reorderTimeline() → chronologisch overzicht alle bestelacties
+
+  Forecast Groups (ForecastGroup enum):
+  ├── Ride Activity: WaxTablet, PocketWax — km-gedreven verbruik
+  ├── Getting Started: StarterKit, WaxKit, Bundle — acquisitie-producten
+  ├── Chain Wear: Chain, ChainConsumable, ChainTool — slijtage-vervanging
+  └── Companion: Heater, HeaterAccessory, Cleaning, MultiTool, Accessory — add-ons
+
 Margin Computation
   └── ComputeOrderMarginsCommand (artisan)
         ├── LineItemLinker (4-staps product matching: SKU → barcode → alias → title)
@@ -144,7 +177,9 @@ app/Services/
 │                  DtcSalesQueryService, OdooB2bSalesService, Channel*, Customer*,
 │                  Product*, PurchaseLadder*, RepeatProbability*, SegmentMovement*
 ├── Forecast/      ForecastService, ScenarioService, CohortProjectionService,
-│                  GoalService, StockForecastService, SeasonalIndexCalculator
+│                  GoalService, StockForecastService, SeasonalIndexCalculator,
+│                  CategorySeasonalCalculator, DemandForecastService,
+│                  DemandEventService, ForecastTrackingService, StockPlanningService
 ├── Scoring/       RfmScoringService, FollowerScorer, ChannelClassificationService,
 │                  ProductClassifier, SuspectProfileFlagger, SegmentTransitionLogger,
 │                  OrderMarginCalculator
@@ -311,6 +346,31 @@ AdSpendRecord (toekomstig — tabel klaar, import command volgt)
   ├── period, channel, country_code, campaign_name
   ├── spend, impressions, clicks, conversions, notes
   └── imported_at
+
+DemandEvent
+  ├── name, type (DemandEventType: promo_campaign | product_launch)
+  ├── start_date, end_date, description, is_historical
+  └── hasMany → DemandEventCategory
+
+DemandEventCategory
+  ├── demand_event_id (FK), product_category (ProductCategory enum)
+  ├── expected_uplift_units (nullable), pull_forward_pct (default 0)
+  └── belongsTo → DemandEvent
+
+ScenarioProductMix
+  ├── scenario_id (FK), product_category (ProductCategory enum)
+  ├── acq_share, repeat_share, avg_unit_price
+  └── belongsTo → Scenario
+
+SupplyConfig
+  ├── product_category (unique), lead_time_days, moq, buffer_days
+  └── supplier_name, notes
+
+ForecastSnapshot
+  ├── scenario_id (FK), year_month, product_category (nullable = totaal)
+  ├── forecasted_units, forecasted_revenue
+  ├── actual_units (nullable), actual_revenue (nullable)
+  └── belongsTo → Scenario
 ```
 
 ## Postcode → Province Mapping

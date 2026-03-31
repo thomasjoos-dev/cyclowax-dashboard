@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\ForecastGroup;
+use App\Enums\ProductCategory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -20,6 +22,8 @@ class SeasonalIndex extends Model
         return [
             'month' => 'integer',
             'index_value' => 'decimal:4',
+            'product_category' => ProductCategory::class,
+            'forecast_group' => ForecastGroup::class,
         ];
     }
 
@@ -37,5 +41,21 @@ class SeasonalIndex extends Model
     public function scopeForRegion(Builder $query, string $region): void
     {
         $query->where('region', $region);
+    }
+
+    /**
+     * @param  Builder<SeasonalIndex>  $query
+     */
+    public function scopeForCategory(Builder $query, ProductCategory $category): void
+    {
+        $query->where('product_category', $category->value);
+    }
+
+    /**
+     * @param  Builder<SeasonalIndex>  $query
+     */
+    public function scopeForGroup(Builder $query, ForecastGroup $group): void
+    {
+        $query->where('forecast_group', $group->value);
     }
 }
