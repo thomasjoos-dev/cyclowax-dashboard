@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\KlaviyoCampaign;
-use App\Services\KlaviyoCampaignSyncer;
+use App\Services\Sync\KlaviyoCampaignSyncer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 

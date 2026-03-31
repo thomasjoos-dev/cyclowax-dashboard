@@ -4,7 +4,7 @@ use App\Enums\LifecycleStage;
 use App\Models\KlaviyoProfile;
 use App\Models\RiderProfile;
 use App\Models\ShopifyCustomer;
-use App\Services\RiderProfileLinker;
+use App\Services\Sync\RiderProfileLinker;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

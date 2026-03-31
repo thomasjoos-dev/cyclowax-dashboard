@@ -4,7 +4,7 @@ use App\Models\Product;
 use App\Models\ProductStockSnapshot;
 use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
-use App\Services\StockForecastService;
+use App\Services\Forecast\StockForecastService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

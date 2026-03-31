@@ -8,8 +8,8 @@ use App\Models\RiderProfile;
 use App\Models\SegmentTransition;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyOrder;
-use App\Services\FollowerScorer;
-use App\Services\RiderProfileLinker;
+use App\Services\Scoring\FollowerScorer;
+use App\Services\Sync\RiderProfileLinker;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

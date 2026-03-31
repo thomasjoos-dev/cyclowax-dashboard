@@ -5,7 +5,7 @@ use App\Enums\LifecycleStage;
 use App\Models\KlaviyoProfile;
 use App\Models\RiderProfile;
 use App\Models\ShopifyCustomer;
-use App\Services\FollowerScorer;
+use App\Services\Scoring\FollowerScorer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

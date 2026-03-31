@@ -5,7 +5,7 @@ use App\Enums\FollowerSegment;
 use App\Enums\LifecycleStage;
 use App\Models\RiderProfile;
 use App\Models\ShopifyCustomer;
-use App\Services\SegmentMovementService;
+use App\Services\Analysis\SegmentMovementService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

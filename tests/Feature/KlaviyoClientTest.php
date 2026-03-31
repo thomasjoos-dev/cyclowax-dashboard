@@ -1,6 +1,6 @@
 <?php
 
-use App\Services\KlaviyoClient;
+use App\Services\Api\KlaviyoClient;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {

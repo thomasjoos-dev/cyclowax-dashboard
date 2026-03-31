@@ -3,8 +3,8 @@
 use App\Enums\LifecycleStage;
 use App\Models\RiderProfile;
 use App\Models\ShopifyCustomer;
-use App\Services\ShopifyClient;
-use App\Services\ShopifySegmentSyncer;
+use App\Services\Api\ShopifyClient;
+use App\Services\Sync\ShopifySegmentSyncer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

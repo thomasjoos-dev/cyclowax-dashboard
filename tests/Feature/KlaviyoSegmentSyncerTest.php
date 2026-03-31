@@ -3,8 +3,8 @@
 use App\Enums\LifecycleStage;
 use App\Models\KlaviyoProfile;
 use App\Models\RiderProfile;
-use App\Services\KlaviyoClient;
-use App\Services\KlaviyoSegmentSyncer;
+use App\Services\Api\KlaviyoClient;
+use App\Services\Sync\KlaviyoSegmentSyncer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

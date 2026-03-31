@@ -1,6 +1,6 @@
 <?php
 
-use App\Services\OdooClient;
+use App\Services\Api\OdooClient;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {

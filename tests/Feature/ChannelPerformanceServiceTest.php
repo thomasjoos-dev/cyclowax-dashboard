@@ -3,7 +3,7 @@
 use App\Models\AdSpend;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyOrder;
-use App\Services\ChannelPerformanceService;
+use App\Services\Analysis\ChannelPerformanceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

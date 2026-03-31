@@ -2,7 +2,7 @@
 
 use App\Models\Scenario;
 use App\Models\ScenarioAssumption;
-use App\Services\ScenarioService;
+use App\Services\Forecast\ScenarioService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

@@ -3,7 +3,7 @@
 use App\Enums\Team;
 use App\Models\KeyResult;
 use App\Models\Objective;
-use App\Services\GoalService;
+use App\Services\Forecast\GoalService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

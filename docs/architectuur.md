@@ -121,6 +121,23 @@ Shared Query Layer
   └── OdooB2bSalesService (B2B sales ophaling via Odoo JSON-RPC, SKU parsing, batch aggregatie)
 ```
 
+## Services Mappenstructuur
+
+```
+app/Services/
+├── Api/           ShopifyClient, KlaviyoClient, OdooClient
+├── Sync/          *Syncer (6x), RiderProfileLinker, LineItemLinker, AdSpendImporter
+├── Analysis/      DashboardService (delegator), *AnalyticsService (4x),
+│                  DtcSalesQueryService, OdooB2bSalesService, Channel*, Customer*,
+│                  Product*, PurchaseLadder*, RepeatProbability*, SegmentMovement*
+├── Forecast/      ForecastService, ScenarioService, CohortProjectionService,
+│                  GoalService, StockForecastService, SeasonalIndexCalculator
+├── Scoring/       RfmScoringService, FollowerScorer, ChannelClassificationService,
+│                  ProductClassifier, SuspectProfileFlagger, SegmentTransitionLogger,
+│                  OrderMarginCalculator
+└── Support/       AnalysisPdfService, PostalProvinceResolver, ShippingCostEstimator
+```
+
 ## Authenticatie & Autorisatie
 
 ### Auth stack

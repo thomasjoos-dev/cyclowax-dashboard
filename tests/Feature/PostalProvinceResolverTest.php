@@ -1,6 +1,6 @@
 <?php
 
-use App\Services\PostalProvinceResolver;
+use App\Services\Support\PostalProvinceResolver;
 
 beforeEach(function () {
     $this->resolver = new PostalProvinceResolver;

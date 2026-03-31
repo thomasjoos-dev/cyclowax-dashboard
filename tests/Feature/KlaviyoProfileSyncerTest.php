@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\KlaviyoProfile;
-use App\Services\KlaviyoProfileSyncer;
+use App\Services\Sync\KlaviyoProfileSyncer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 

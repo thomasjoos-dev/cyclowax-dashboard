@@ -2,7 +2,7 @@
 
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyOrder;
-use App\Services\CustomerValueService;
+use App\Services\Analysis\CustomerValueService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
