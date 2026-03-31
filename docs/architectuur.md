@@ -121,6 +121,19 @@ Shared Query Layer
   └── OdooB2bSalesService (B2B sales ophaling via Odoo JSON-RPC, SKU parsing, batch aggregatie)
 ```
 
+## Database Portabiliteit
+
+Alle raw SQL queries gebruiken `App\Support\DbDialect` voor database-agnostische expressies. De applicatie draait op SQLite (lokaal) en MySQL/PostgreSQL (staging/productie).
+
+| Helper | SQLite | MySQL | PostgreSQL |
+|--------|--------|-------|------------|
+| `yearMonthExpr()` | `strftime('%Y-%m', col)` | `DATE_FORMAT(col, '%Y-%m')` | `to_char(col, 'YYYY-MM')` |
+| `monthExpr()` | `CAST(strftime('%m', col) AS INTEGER)` | `MONTH(col)` | `EXTRACT(MONTH FROM col)` |
+| `yearExpr()` | `strftime('%Y', col)` | `YEAR(col)` | `EXTRACT(YEAR FROM col)` |
+| `yearWeekExpr()` | `strftime('%Y-%W', col)` | `DATE_FORMAT(col, '%Y-%v')` | `to_char(col, 'IYYY-IW')` |
+| `daysDiffExpr()` | `julianday(a) - julianday(b)` | `DATEDIFF(a, b)` | `EXTRACT(EPOCH FROM (a-b))/86400` |
+| `daysSinceExpr()` | `julianday(date) - julianday(col)` | `DATEDIFF(date, col)` | `EXTRACT(EPOCH FROM (date-col))/86400` |
+
 ## Services Mappenstructuur
 
 ```
