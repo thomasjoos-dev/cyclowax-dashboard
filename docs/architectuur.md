@@ -68,8 +68,8 @@ Rider Profiles & Segmentation
   │           ├── Intent (0-4): site(1) → product view(2) → cart(3) → checkout(4)
   │           └── SegmentTransitionLogger (segment transitions)
   ├── CalculateRfmScoresCommand (artisan)
-  │     └── RFM scoring (R/F/M 1-5) → ShopifyCustomer.rfm_segment + RiderProfile.segment
-  │           └── SegmentTransitionLogger (segment transitions)
+  │     └── RfmScoringService (R/F/M 1-5) → ShopifyCustomer.rfm_segment + RiderProfile.segment
+  │           └── SegmentTransitionLogger (injected, segment transitions)
   ├── KlaviyoSyncSegmentsCommand (artisan)
   │     └── KlaviyoSegmentSyncer (write-back to Klaviyo)
   │           ├── Bulk Import API (POST /api/profile-bulk-import-jobs, max 10K/batch)
@@ -88,13 +88,23 @@ Rider Profiles & Segmentation
         ├── FollowerSegment: new | engaged | high_potential | hot_lead | fading | inactive
         └── CustomerSegment: champion | at_risk | rising | loyal | hunters | promising_first | one_timer | new_customer
 
+Product Classification
+  └── ClassifyProductPortfolioCommand (artisan)
+        └── ProductClassifier (SKU-based rule tree → category, role, phase, recipe)
+
+Suspect Profile Flagging
+  └── FlagSuspectProfilesCommand (artisan)
+        └── SuspectProfileFlagger (disposable emails, ghost checkouts, bot opens)
+
+Seasonal Indices
+  └── CalculateSeasonalIndicesCommand (artisan)
+        └── SeasonalIndexCalculator (monthly normalisatie → avg = 1.0)
+
 Margin Computation
   └── ComputeOrderMarginsCommand (artisan)
-        ├── Link line items → products via SKU
-        ├── COGS snapshot op line items
-        ├── total_cost + gross_margin op orders
-        ├── is_first_order classificatie
-        └── Customer aggregates (local_orders_count, total_cost, first_order_channel)
+        ├── LineItemLinker (4-staps product matching: SKU → barcode → alias → title)
+        ├── OrderMarginCalculator (net revenue, COGS, fees, margins, first-order, aggregates)
+        └── ChannelClassificationService (channel_type + refined_channel)
 ```
 
 ## Authenticatie & Autorisatie

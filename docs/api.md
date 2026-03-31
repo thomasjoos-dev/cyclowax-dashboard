@@ -237,8 +237,13 @@ Audit Odoo shipping cost data: coverage per carrier, timeline, and gaps. Use to 
 ### `odoo:sync-products`
 Sync products from Odoo: COGS, stock quantities, categories, barcodes. Records daily stock snapshots. Enriches product_type from Shopify line items.
 
-### `orders:compute-margins`
-Post-sync computation: links line items to products via SKU, sets COGS snapshots, computes order-level margins (total_cost, gross_margin), classifies first orders, updates customer aggregates.
+### `orders:compute-margins {--full}`
+Post-sync computation pipeline via `LineItemLinker` + `OrderMarginCalculator` + `ChannelClassificationService`:
+1. Link line items to products (SKU → barcode → alias → title fallback)
+2. Set COGS snapshots, compute net revenue, payment fees, shipping margins, gross margin
+3. Classify first orders per customer
+4. Classify channel types and refined channels
+5. Update customer aggregates (order count, total cost, first order channel)
 
 ### `klaviyo:sync-profiles`
 Sync all customer profiles from Klaviyo, including predictive analytics (CLV, churn probability). Upserts in batches of 50 via cursor-based pagination.
@@ -259,7 +264,19 @@ Sync rider segmentation data back to Klaviyo as custom profile properties (`cycl
 Sync rider segment tags (`cw:*`) to Shopify customers via bulk mutations. Two-phase approach: first removes all existing `cw:` tags (`tagsRemove`), then adds the current segment tag (`tagsAdd`). Uses JSONL staged uploads for efficiency. Default mode is incremental: only customers where `updated_at > shopify_synced_at`. Use `--full` flag for a complete resync.
 
 ### `profiles:score-followers`
-Calculate two scores per follower: engagement (1-5) and intent (0-4). Engagement is weighted: site visits (35%), email clicks (30%), opens (20%), recency (15%). Intent is highest funnel step: site visit (1), product view (2), cart add (3), checkout started (4) — halved if >30 days ago. Segments: `new`, `hot_lead`, `high_potential`, `engaged`, `fading` (30-90d), `inactive` (>90d).
+Calculate two scores per follower via `FollowerScorer`: engagement (1-5) and intent (0-4). Engagement is weighted: site visits (35%), email clicks (30%), opens (20%), recency (15%). Intent is highest funnel step: site visit (1), product view (2), cart add (3), checkout started (4) — halved if >30 days ago. Segments: `new`, `hot_lead`, `high_potential`, `engaged`, `fading` (30-90d), `inactive` (>90d).
+
+### `profiles:flag-suspects`
+Flag suspect Klaviyo profiles via `SuspectProfileFlagger`. Three rules: disposable email patterns, ghost checkouts (3+ checkouts, 0 views), bot opens (opens > 5x received). Idempotent — resets all flags before each run.
+
+### `customers:calculate-rfm`
+Calculate RFM scores via `RfmScoringService`. Quintile-based R/M scoring, custom F breakpoints (78% single-order), 7-rule waterfall segmentation → 8 CustomerSegment values. Updates ShopifyCustomer + RiderProfile, logs transitions via `SegmentTransitionLogger`.
+
+### `products:classify-portfolio {--force}`
+Classify products via `ProductClassifier`. SKU-based rule tree assigns: ProductCategory, PortfolioRole, JourneyPhase, WaxRecipe, HeaterGeneration, discontinued status. Links successor products.
+
+### `seasonal:calculate {--region=}`
+Calculate monthly seasonal indices via `SeasonalIndexCalculator`. Normalises order counts per calendar month to indices where average = 1.0. Optionally per region (country code).
 
 ### `sync:all`
 Full daily pipeline orchestrator. Runs in sequence: `shopify:sync-orders` → `odoo:sync-products` → `odoo:sync-shipping-costs` → `klaviyo:sync-profiles` → `klaviyo:sync-campaigns` → `orders:compute-margins` → `customers:calculate-rfm` → `klaviyo:sync-engagement` → `profiles:flag-suspects` → `profiles:link` → `profiles:score-followers` → `klaviyo:sync-segments` → `shopify:sync-segments` → cache flush. Each step logs duration. Failures are logged but don't block subsequent steps.
