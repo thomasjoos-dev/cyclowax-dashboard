@@ -17,7 +17,7 @@ class SupplyProfileAnalyzer
     /**
      * Analyze purchase order history from Odoo and return supply chain metrics per product category.
      *
-     * @return array<string, array{lead_time_days: int|null, moq: int|null, order_frequency_days: int|null, sample_size: int, suppliers: array<string>}>
+     * @return array<string, array{procurement_lead_time_days: int|null, moq: int|null, order_frequency_days: int|null, sample_size: int, suppliers: array<string>}>
      */
     public function analyze(): array
     {
@@ -57,7 +57,7 @@ class SupplyProfileAnalyzer
 
         foreach ($byCategory as $categoryValue => $lines) {
             $results[$categoryValue] = [
-                'lead_time_days' => $this->calculateLeadTime($lines),
+                'procurement_lead_time_days' => $this->calculateLeadTime($lines),
                 'moq' => $this->calculateMoq($lines),
                 'order_frequency_days' => $this->calculateOrderFrequency($lines),
                 'sample_size' => $lines->count(),
@@ -82,10 +82,10 @@ class SupplyProfileAnalyzer
 
             if (! $profile) {
                 // Create new profile from analysis
-                if ($metrics['lead_time_days'] !== null) {
+                if ($metrics['procurement_lead_time_days'] !== null) {
                     SupplyProfile::create([
                         'product_category' => $categoryValue,
-                        'lead_time_days' => $metrics['lead_time_days'],
+                        'procurement_lead_time_days' => $metrics['procurement_lead_time_days'],
                         'moq' => $metrics['moq'] ?? 50,
                         'buffer_days' => 14,
                         'supplier_name' => implode(', ', array_slice($metrics['suppliers'], 0, 3)),
@@ -98,8 +98,8 @@ class SupplyProfileAnalyzer
 
             $updates = [];
 
-            if ($metrics['lead_time_days'] !== null) {
-                $updates['lead_time_days'] = $metrics['lead_time_days'];
+            if ($metrics['procurement_lead_time_days'] !== null) {
+                $updates['procurement_lead_time_days'] = $metrics['procurement_lead_time_days'];
             }
             if ($metrics['moq'] !== null) {
                 $updates['moq'] = $metrics['moq'];

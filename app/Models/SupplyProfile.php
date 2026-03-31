@@ -19,7 +19,8 @@ class SupplyProfile extends Model
     {
         return [
             'product_category' => ProductCategory::class,
-            'lead_time_days' => 'integer',
+            'procurement_lead_time_days' => 'integer',
+            'assembly_lead_time_days' => 'integer',
             'moq' => 'integer',
             'buffer_days' => 'integer',
         ];

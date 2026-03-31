@@ -38,7 +38,7 @@ class StockPlanningService
                 $stock -= $demand;
 
                 // Look ahead: how much demand in the next lead_time + buffer days?
-                $lookaheadMonths = (int) ceil(($profile->lead_time_days + $profile->buffer_days) / 30);
+                $lookaheadMonths = (int) ceil(($profile->procurement_lead_time_days + $profile->assembly_lead_time_days + $profile->buffer_days) / 30);
                 $futureDemand = 0;
                 for ($ahead = 1; $ahead <= $lookaheadMonths && ($month + $ahead) <= 12; $ahead++) {
                     $futureMonth = $month + $ahead;
@@ -55,7 +55,7 @@ class StockPlanningService
                     }
 
                     $orderDate = now()->setYear($year)->setMonth($month)->setDay(1)
-                        ->subDays($profile->lead_time_days)
+                        ->subDays($profile->procurement_lead_time_days + $profile->assembly_lead_time_days)
                         ->toDateString();
 
                     $orders[] = [

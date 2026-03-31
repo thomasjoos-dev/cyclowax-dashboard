@@ -41,6 +41,8 @@ class SyncAllCommand extends Command
             ['shopify:sync-orders', 'Shopify order sync'],
             ['odoo:sync-products', 'Odoo product sync'],
             ['odoo:sync-shipping-costs', 'Odoo shipping cost sync'],
+            ['odoo:sync-boms', 'Odoo BOM sync'],
+            ['odoo:sync-open-pos', 'Odoo open PO sync'],
             ['klaviyo:sync-profiles', 'Klaviyo profile sync'],
             ['klaviyo:sync-campaigns', 'Klaviyo campaign sync'],
             ['orders:compute-margins', 'Margin computation'],

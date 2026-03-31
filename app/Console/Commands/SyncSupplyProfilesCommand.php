@@ -35,8 +35,8 @@ class SyncSupplyProfilesCommand extends Command
             $rows[] = [
                 $categoryValue,
                 $metrics['sample_size'],
-                $current?->lead_time_days ?? '-',
-                $metrics['lead_time_days'] !== null ? $metrics['lead_time_days'].'d' : 'n/a',
+                $current?->procurement_lead_time_days ?? '-',
+                $metrics['procurement_lead_time_days'] !== null ? $metrics['procurement_lead_time_days'].'d' : 'n/a',
                 $current?->moq ?? '-',
                 $metrics['moq'] !== null ? $metrics['moq'] : 'n/a',
                 $metrics['order_frequency_days'] !== null ? $metrics['order_frequency_days'].'d' : 'n/a',

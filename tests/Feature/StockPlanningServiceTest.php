@@ -35,7 +35,7 @@ function setupStockPlanningScenario(): Scenario
 
     SupplyProfile::create([
         'product_category' => ProductCategory::WaxTablet->value,
-        'lead_time_days' => 45,
+        'procurement_lead_time_days' => 45,
         'moq' => 500,
         'buffer_days' => 14,
     ]);

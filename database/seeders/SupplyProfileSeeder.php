@@ -31,7 +31,7 @@ class SupplyProfileSeeder extends Seeder
             SupplyProfile::updateOrCreate(
                 ['product_category' => $category->value],
                 [
-                    'lead_time_days' => $leadTime,
+                    'procurement_lead_time_days' => $leadTime,
                     'moq' => $moq,
                     'buffer_days' => $buffer,
                     'supplier_name' => $supplier,
