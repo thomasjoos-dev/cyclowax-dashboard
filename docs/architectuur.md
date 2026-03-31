@@ -221,13 +221,20 @@ Alle API list-endpoints gebruiken FormRequests (`App\Http\Requests\Api\V1\*`):
 ## Dataflow
 
 ### Sync pipeline (dagelijks 06:00 via `sync:all`)
+
+**Resumable sync architectuur:** Elke sync-stap heeft een time budget van 3,5 minuten
+(via `HasTimeBudget` trait). Stappen die niet binnen het budget passen slaan een cursor
+op in `sync_states` en hervatten bij de volgende run. `SyncAllCommand` skipt afgeronde
+stappen en stopt bij de eerste incomplete stap. Alle writes zijn idempotent (upsert).
+
 0. **Klaviyo profiles** (`klaviyo:sync-profiles`)
-   - Cursor-based pagination door alle profielen (page size 100)
+   - Cursor-based pagination door alle profielen (page size 50)
    - Inclusief predictive analytics (CLV, churn, predicted orders)
-   - Batch upsert per 50 profielen
+   - Batch upsert per 50 profielen, cursor opgeslagen per pagina
 0. **Klaviyo campaigns** (`klaviyo:sync-campaigns`)
    - Alle email campaigns ophalen en upserten
    - Sent campaigns verrijken met metrics via Reporting API (1 req/sec rate limit)
+   - Enrichment stopt bij time budget; campaigns met `recipients = 0` zijn impliciete cursor
 1. **Shopify orders** (`shopify:sync-orders`)
    - `ShopifyOrderSyncer` telt orders in date range
    - <1000: cursor-based pagination (50/page)
