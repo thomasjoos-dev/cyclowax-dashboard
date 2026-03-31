@@ -3,27 +3,31 @@
 namespace App\Console\Commands;
 
 use App\Services\AnalysisPdfService;
-use App\Services\OdooClient;
+use App\Services\DtcSalesQueryService;
+use App\Services\OdooB2bSalesService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
-#[Signature('products:overview-report')]
+#[Signature('products:overview-report {--since= : Start date for data scope (default: 6 months ago)}')]
 #[Description('Generate Product Portfolio Overview PDF with DTC + B2B data')]
 class GenerateProductOverviewCommand extends Command
 {
-    private const SINCE = '2025-10-01';
+    private string $since;
 
-    public function handle(AnalysisPdfService $pdf, OdooClient $odoo): int
+    public function handle(AnalysisPdfService $pdf, DtcSalesQueryService $dtcQuery, OdooB2bSalesService $b2bService): int
     {
+        $this->since = $this->option('since')
+            ?? now()->subMonths(6)->startOfMonth()->toDateString();
         $this->info('Gathering data...');
 
-        $dtcByProduct = $this->getDtcSalesData();
-        $dtcByCategory = $this->getDtcCategoryData();
-        $products = $this->getProductCatalog();
-        $stock = $this->getStockData();
-        $b2bByProduct = $this->getB2bSalesData($odoo);
+        $dtcByProduct = $dtcQuery->productSalesDetailed($this->since);
+        $dtcByCategory = $dtcQuery->categorySales($this->since, now()->toDateString());
+        $products = $dtcQuery->productCatalog();
+        $stock = $dtcQuery->stockData();
+        $this->info('Fetching B2B orders from Odoo...');
+        $b2bByProduct = $b2bService->salesByProduct($this->since);
+        $this->info('B2B: '.count($b2bByProduct).' products');
 
         $this->info('Building PDF...');
 
@@ -44,7 +48,7 @@ class GenerateProductOverviewCommand extends Command
             'quote' => 'Always a clean chain',
             'landscape' => true,
             'intro' => 'Overzicht van alle Cyclowax producten met verkoopcijfers uit Shopify (DTC) en Odoo (B2B). '
-                .'Scope: '.self::SINCE.' t/m heden. DTC data uit dashboard database, B2B data uit Odoo sale.order.',
+                .'Scope: '.$this->since.' t/m heden. DTC data uit dashboard database, B2B data uit Odoo sale.order.',
             'metrics' => [
                 ['label' => 'DTC Revenue', 'value' => '€'.number_format($totalDtcRevenue, 0, ',', '.'), 'change' => number_format($activeDtcSkus).' actieve SKU\'s'],
                 ['label' => 'B2B Revenue', 'value' => '€'.number_format($totalB2bRevenue, 0, ',', '.'), 'change' => number_format($activeB2bSkus).' actieve SKU\'s'],
@@ -65,218 +69,6 @@ class GenerateProductOverviewCommand extends Command
     }
 
     /**
-     * @return array<string, array<string, mixed>>
-     */
-    private function getDtcSalesData(): array
-    {
-        $rows = DB::select("
-            SELECT
-                p.sku,
-                p.name,
-                p.product_category,
-                p.portfolio_role,
-                p.journey_phase,
-                p.cost_price,
-                p.list_price,
-                p.is_active,
-                p.is_discontinued,
-                COUNT(li.id) as line_items,
-                SUM(li.quantity) as units_sold,
-                ROUND(SUM(li.price * li.quantity), 2) as gross_revenue,
-                ROUND(SUM(li.cost_price * li.quantity), 2) as total_cogs,
-                ROUND(SUM(li.price * li.quantity) - SUM(li.cost_price * li.quantity), 2) as gross_margin,
-                ROUND(
-                    CASE WHEN SUM(li.price * li.quantity) > 0
-                    THEN ((SUM(li.price * li.quantity) - SUM(li.cost_price * li.quantity)) / SUM(li.price * li.quantity)) * 100
-                    ELSE 0 END, 1
-                ) as margin_pct,
-                ROUND(AVG(li.price), 2) as avg_sell_price,
-                ROUND(AVG(li.cost_price), 2) as avg_cost_price,
-                SUM(CASE WHEN o.is_first_order = 1 THEN li.quantity ELSE 0 END) as units_first_order,
-                SUM(CASE WHEN o.is_first_order = 0 THEN li.quantity ELSE 0 END) as units_repeat_order
-            FROM shopify_line_items li
-            JOIN shopify_orders o ON li.order_id = o.id
-            JOIN products p ON li.product_id = p.id
-            WHERE o.ordered_at >= ?
-              AND o.financial_status NOT IN ('voided', 'refunded')
-            GROUP BY p.id, p.sku, p.name, p.product_category, p.portfolio_role, p.journey_phase,
-                     p.cost_price, p.list_price, p.is_active, p.is_discontinued
-            ORDER BY gross_revenue DESC
-        ", [self::SINCE]);
-
-        $result = [];
-        foreach ($rows as $row) {
-            $result[$row->sku] = (array) $row;
-        }
-
-        return $result;
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function getDtcCategoryData(): array
-    {
-        $rows = DB::select("
-            SELECT
-                p.product_category,
-                COUNT(DISTINCT p.id) as sku_count,
-                SUM(li.quantity) as total_units,
-                ROUND(SUM(li.price * li.quantity), 2) as total_revenue,
-                ROUND(SUM(li.price * li.quantity) - SUM(li.cost_price * li.quantity), 2) as total_margin,
-                ROUND(
-                    CASE WHEN SUM(li.price * li.quantity) > 0
-                    THEN ((SUM(li.price * li.quantity) - SUM(li.cost_price * li.quantity)) / SUM(li.price * li.quantity)) * 100
-                    ELSE 0 END, 1
-                ) as margin_pct,
-                SUM(CASE WHEN o.is_first_order = 1 THEN li.quantity ELSE 0 END) as first_order_units,
-                SUM(CASE WHEN o.is_first_order = 0 THEN li.quantity ELSE 0 END) as repeat_units
-            FROM shopify_line_items li
-            JOIN shopify_orders o ON li.order_id = o.id
-            JOIN products p ON li.product_id = p.id
-            WHERE o.ordered_at >= ?
-              AND o.financial_status NOT IN ('voided', 'refunded')
-            GROUP BY p.product_category
-            ORDER BY total_revenue DESC
-        ", [self::SINCE]);
-
-        return array_map(fn ($row) => (array) $row, $rows);
-    }
-
-    /**
-     * @return array<string, array<string, mixed>>
-     */
-    private function getProductCatalog(): array
-    {
-        $rows = DB::select('
-            SELECT
-                p.sku,
-                p.name,
-                p.product_category,
-                p.portfolio_role,
-                p.journey_phase,
-                p.wax_recipe,
-                p.heater_generation,
-                p.cost_price,
-                p.list_price,
-                p.is_active,
-                p.is_discontinued,
-                p.discontinued_at,
-                succ.sku as successor_sku,
-                succ.name as successor_name
-            FROM products p
-            LEFT JOIN products succ ON p.successor_product_id = succ.id
-            ORDER BY p.product_category, p.name
-        ');
-
-        $result = [];
-        foreach ($rows as $row) {
-            $result[$row->sku] = (array) $row;
-        }
-
-        return $result;
-    }
-
-    /**
-     * @return array<string, array<string, mixed>>
-     */
-    private function getStockData(): array
-    {
-        $rows = DB::select('
-            SELECT
-                p.sku,
-                ps.qty_on_hand,
-                ps.qty_forecasted,
-                ps.recorded_at
-            FROM product_stock_snapshots ps
-            JOIN products p ON ps.product_id = p.id
-            WHERE ps.recorded_at = (SELECT MAX(recorded_at) FROM product_stock_snapshots)
-        ');
-
-        $result = [];
-        foreach ($rows as $row) {
-            $result[$row->sku] = (array) $row;
-        }
-
-        return $result;
-    }
-
-    /**
-     * @return array<string, array{name: string, sku: string, qty: float, revenue: float, orders: int}>
-     */
-    private function getB2bSalesData(OdooClient $odoo): array
-    {
-        $this->info('Fetching B2B orders from Odoo...');
-
-        $b2bOrders = $odoo->searchRead(
-            'sale.order',
-            [
-                ['date_order', '>=', self::SINCE],
-                ['state', 'in', ['sale', 'done']],
-                ['shopify_order_number', '=', false],
-            ],
-            ['name', 'partner_id', 'date_order', 'amount_untaxed', 'order_line'],
-            500,
-        );
-
-        $allLineIds = [];
-        foreach ($b2bOrders as $order) {
-            if (is_array($order['order_line'])) {
-                $allLineIds = array_merge($allLineIds, $order['order_line']);
-            }
-        }
-
-        $this->info('Fetching '.count($allLineIds).' B2B line items...');
-
-        $byProduct = [];
-        $offset = 0;
-        $batchSize = 1000;
-
-        while ($offset < count($allLineIds)) {
-            $lines = $odoo->searchRead(
-                'sale.order.line',
-                [['id', 'in', $allLineIds]],
-                ['product_id', 'name', 'product_uom_qty', 'price_subtotal'],
-                $batchSize,
-                $offset,
-            );
-
-            foreach ($lines as $line) {
-                $productName = is_array($line['product_id']) ? $line['product_id'][1] : $line['name'];
-
-                // Extract SKU from product name pattern "[SKU] Name"
-                $sku = 'unknown';
-                if (preg_match('/^\[([^\]]+)\]/', $productName, $matches)) {
-                    $sku = $matches[1];
-                    $productName = trim(preg_replace('/^\[[^\]]+\]\s*/', '', $productName));
-                }
-
-                if (! isset($byProduct[$sku])) {
-                    $byProduct[$sku] = [
-                        'name' => $productName,
-                        'sku' => $sku,
-                        'qty' => 0,
-                        'revenue' => 0,
-                        'orders' => 0,
-                    ];
-                }
-                $byProduct[$sku]['qty'] += $line['product_uom_qty'];
-                $byProduct[$sku]['revenue'] += $line['price_subtotal'];
-                $byProduct[$sku]['orders']++;
-            }
-
-            $offset += $batchSize;
-        }
-
-        // Sort by revenue descending
-        uasort($byProduct, fn (array $a, array $b): int => $b['revenue'] <=> $a['revenue']);
-
-        $this->info('B2B: '.count($b2bOrders).' orders, '.count($byProduct).' products');
-
-        return $byProduct;
-    }
-
-    /**
      * @return array<int, array<string, mixed>>
      */
     private function buildSections(
@@ -290,7 +82,7 @@ class GenerateProductOverviewCommand extends Command
 
         // ── Page 1: Portfolio Summary ──
         $sections[] = ['type' => 'heading', 'content' => 'Revenue per categorie — DTC vs B2B'];
-        $sections[] = $this->buildCategorySummaryTable($dtcByCategory, $b2bByProduct);
+        $sections[] = $this->buildCategorySummaryTable($dtcByCategory, $b2bByProduct, $products);
 
         // ── Category detail pages ──
         $categories = [
@@ -352,10 +144,8 @@ class GenerateProductOverviewCommand extends Command
         return $sections;
     }
 
-    private function buildCategorySummaryTable(array $dtcByCategory, array $b2bByProduct): array
+    private function buildCategorySummaryTable(array $dtcByCategory, array $b2bByProduct, array $products): array
     {
-        // Get product catalog for category mapping
-        $products = $this->getProductCatalog();
 
         $headers = [
             ['label' => 'Categorie', 'width' => '16%'],
@@ -592,7 +382,7 @@ class GenerateProductOverviewCommand extends Command
             '<strong>Voorraad snapshot:</strong> '.$withStock.' producten met voorraaddata (coverage: '.$stockCoverage.'%). Laatst gesynct: '.$stockDate.'.',
             '<strong>B2B COGS:</strong> Niet beschikbaar in B2B orders. B2B toont alleen verkoopprijzen (excl. BTW).',
             '<strong>Shipping products:</strong> FedEx, Bpost en SendCloud delivery lines verschijnen in B2B orders als aparte line items — deze zijn apart van productomzet.',
-            '<strong>Scope:</strong> '.self::SINCE.' t/m heden. DTC excl. voided en refunded orders.',
+            '<strong>Scope:</strong> '.$this->since.' t/m heden. DTC excl. voided en refunded orders.',
         ];
 
         return ['type' => 'list', 'items' => $items];

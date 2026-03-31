@@ -3,10 +3,10 @@
 namespace App\Console\Commands;
 
 use App\Services\AnalysisPdfService;
+use App\Services\DtcSalesQueryService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 #[Signature('report:march-dtc')]
 #[Description('Generate March 2026 DTC sales report with PWK pre-order forecast')]
@@ -22,17 +22,17 @@ class GenerateMarchDtcReportCommand extends Command
 
     private const PWK_AVG_PRICE = 205;
 
-    public function handle(AnalysisPdfService $pdf): int
+    public function handle(AnalysisPdfService $pdf, DtcSalesQueryService $dtcQuery): int
     {
         $this->info('Gathering March DTC data...');
 
-        $totals = $this->getOrderTotals();
-        $products = $this->getProductSales();
-        $categories = $this->getCategorySales();
-        $countries = $this->getCountrySales();
-        $provinces = $this->getProvinceSales();
-        $pwkMonthly = $this->getPwkMonthlySales();
-        $pwkWeekly = $this->getPwkWeeklySales();
+        $totals = $dtcQuery->orderTotals(self::PERIOD_START, self::PERIOD_END);
+        $products = $dtcQuery->productSales(self::PERIOD_START, self::PERIOD_END);
+        $categories = $dtcQuery->categorySales(self::PERIOD_START, self::PERIOD_END);
+        $countries = $dtcQuery->countrySales(self::PERIOD_START, self::PERIOD_END);
+        $provinces = $dtcQuery->provinceSales(self::PERIOD_START, self::PERIOD_END);
+        $pwkMonthly = $dtcQuery->monthlySales('2026-01-01', self::PERIOD_END, skuPrefix: self::PWK_SKU);
+        $pwkWeekly = $dtcQuery->weeklySales('2026-01-01', self::PERIOD_END, skuPrefix: self::PWK_SKU);
 
         $this->info('Building PDF...');
 
@@ -61,165 +61,6 @@ class GenerateMarchDtcReportCommand extends Command
         $this->info("Finalized: {$paths['desktop']}");
 
         return self::SUCCESS;
-    }
-
-    private function getOrderTotals(): object
-    {
-        return DB::selectOne("
-            SELECT
-                COUNT(*) as total_orders,
-                ROUND(SUM(total_price), 2) as total_revenue,
-                ROUND(SUM(net_revenue), 2) as total_net_revenue,
-                ROUND(SUM(total_cost), 2) as total_cost,
-                ROUND(SUM(gross_margin), 2) as total_gross_margin,
-                ROUND(SUM(discounts), 2) as total_discounts,
-                ROUND(SUM(refunded), 2) as total_refunded
-            FROM shopify_orders
-            WHERE ordered_at >= ? AND ordered_at < ?
-              AND financial_status NOT IN ('voided', 'refunded')
-        ", [self::PERIOD_START, self::PERIOD_END]);
-    }
-
-    /**
-     * @return array<int, object>
-     */
-    private function getProductSales(): array
-    {
-        return DB::select("
-            SELECT
-                li.sku,
-                COALESCE(p.name, li.product_title) as product_name,
-                p.product_category,
-                p.portfolio_role,
-                SUM(li.quantity) as units_sold,
-                ROUND(SUM(li.price * li.quantity), 2) as gross_revenue,
-                ROUND(SUM(li.cost_price * li.quantity), 2) as total_cost,
-                ROUND(SUM((li.price - COALESCE(li.cost_price, 0)) * li.quantity), 2) as contribution_margin,
-                ROUND(
-                    CASE WHEN SUM(li.price * li.quantity) > 0
-                    THEN ((SUM(li.price * li.quantity) - SUM(COALESCE(li.cost_price, 0) * li.quantity)) / SUM(li.price * li.quantity)) * 100
-                    ELSE 0 END, 1
-                ) as margin_pct,
-                COUNT(DISTINCT li.order_id) as order_count
-            FROM shopify_line_items li
-            JOIN shopify_orders o ON li.order_id = o.id
-            LEFT JOIN products p ON li.product_id = p.id
-            WHERE o.ordered_at >= ? AND o.ordered_at < ?
-              AND o.financial_status NOT IN ('voided', 'refunded')
-            GROUP BY li.sku, product_name, p.product_category, p.portfolio_role
-            ORDER BY gross_revenue DESC
-        ", [self::PERIOD_START, self::PERIOD_END]);
-    }
-
-    /**
-     * @return array<int, object>
-     */
-    private function getCategorySales(): array
-    {
-        return DB::select("
-            SELECT
-                COALESCE(p.product_category, 'overig') as category,
-                SUM(li.quantity) as units_sold,
-                ROUND(SUM(li.price * li.quantity), 2) as gross_revenue,
-                ROUND(SUM(li.cost_price * li.quantity), 2) as total_cost,
-                ROUND(SUM((li.price - COALESCE(li.cost_price, 0)) * li.quantity), 2) as contribution_margin,
-                ROUND(
-                    CASE WHEN SUM(li.price * li.quantity) > 0
-                    THEN ((SUM(li.price * li.quantity) - SUM(COALESCE(li.cost_price, 0) * li.quantity)) / SUM(li.price * li.quantity)) * 100
-                    ELSE 0 END, 1
-                ) as margin_pct
-            FROM shopify_line_items li
-            JOIN shopify_orders o ON li.order_id = o.id
-            LEFT JOIN products p ON li.product_id = p.id
-            WHERE o.ordered_at >= ? AND o.ordered_at < ?
-              AND o.financial_status NOT IN ('voided', 'refunded')
-            GROUP BY category
-            ORDER BY gross_revenue DESC
-        ", [self::PERIOD_START, self::PERIOD_END]);
-    }
-
-    /**
-     * @return array<int, object>
-     */
-    private function getCountrySales(): array
-    {
-        return DB::select("
-            SELECT
-                COALESCE(shipping_country_code, billing_country_code) as country,
-                COUNT(*) as orders,
-                ROUND(SUM(total_price), 2) as revenue,
-                ROUND(SUM(net_revenue), 2) as net_revenue,
-                ROUND(SUM(gross_margin), 2) as gross_margin
-            FROM shopify_orders
-            WHERE ordered_at >= ? AND ordered_at < ?
-              AND financial_status NOT IN ('voided', 'refunded')
-            GROUP BY country
-            ORDER BY revenue DESC
-            LIMIT 15
-        ", [self::PERIOD_START, self::PERIOD_END]);
-    }
-
-    /**
-     * @return array<int, object>
-     */
-    private function getProvinceSales(): array
-    {
-        return DB::select("
-            SELECT
-                COALESCE(shipping_country_code, billing_country_code) as country,
-                shipping_province_code as province,
-                COUNT(*) as orders,
-                ROUND(SUM(total_price), 2) as revenue
-            FROM shopify_orders
-            WHERE ordered_at >= ? AND ordered_at < ?
-              AND financial_status NOT IN ('voided', 'refunded')
-            GROUP BY country, province
-            ORDER BY revenue DESC
-            LIMIT 10
-        ", [self::PERIOD_START, self::PERIOD_END]);
-    }
-
-    /**
-     * @return array<int, object>
-     */
-    private function getPwkMonthlySales(): array
-    {
-        return DB::select("
-            SELECT
-                strftime('%Y-%m', o.ordered_at) as month,
-                SUM(li.quantity) as units,
-                ROUND(SUM(li.price * li.quantity), 2) as revenue,
-                COUNT(DISTINCT o.id) as orders
-            FROM shopify_line_items li
-            JOIN shopify_orders o ON li.order_id = o.id
-            WHERE li.sku = ?
-              AND o.financial_status NOT IN ('voided', 'refunded')
-              AND o.ordered_at >= '2026-01-01'
-            GROUP BY month
-            ORDER BY month
-        ", [self::PWK_SKU]);
-    }
-
-    /**
-     * @return array<int, object>
-     */
-    private function getPwkWeeklySales(): array
-    {
-        return DB::select("
-            SELECT
-                strftime('%Y-%W', o.ordered_at) as week,
-                MIN(DATE(o.ordered_at)) as week_start,
-                MAX(DATE(o.ordered_at)) as week_end,
-                SUM(li.quantity) as units,
-                COUNT(DISTINCT o.id) as orders
-            FROM shopify_line_items li
-            JOIN shopify_orders o ON li.order_id = o.id
-            WHERE li.sku = ?
-              AND o.financial_status NOT IN ('voided', 'refunded')
-              AND o.ordered_at >= '2026-01-01'
-            GROUP BY week
-            ORDER BY week
-        ", [self::PWK_SKU]);
     }
 
     /**

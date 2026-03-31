@@ -110,6 +110,15 @@ Margin Computation
         ├── LineItemLinker (4-staps product matching: SKU → barcode → alias → title)
         ├── OrderMarginCalculator (net revenue, COGS, fees, margins, first-order, aggregates)
         └── ChannelClassificationService (channel_type + refined_channel)
+
+PDF Report Generation
+  ├── GenerateProductOverviewCommand → DtcSalesQueryService + OdooB2bSalesService + AnalysisPdfService
+  ├── GenerateMarchDtcReportCommand → DtcSalesQueryService + AnalysisPdfService
+  └── GenerateMarchRecordReportCommand → DtcSalesQueryService + AnalysisPdfService
+
+Shared Query Layer
+  ├── DtcSalesQueryService (orderTotals, productSales, categorySales, countrySales, monthlySales, weeklySales, ...)
+  └── OdooB2bSalesService (B2B sales ophaling via Odoo JSON-RPC, SKU parsing, batch aggregatie)
 ```
 
 ## Authenticatie & Autorisatie

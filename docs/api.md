@@ -282,3 +282,12 @@ Calculate monthly seasonal indices via `SeasonalIndexCalculator`. Normalises ord
 Full daily pipeline orchestrator. Runs in sequence: `shopify:sync-orders` → `odoo:sync-products` → `odoo:sync-shipping-costs` → `klaviyo:sync-profiles` → `klaviyo:sync-campaigns` → `orders:compute-margins` → `customers:calculate-rfm` → `klaviyo:sync-engagement` → `profiles:flag-suspects` → `profiles:link` → `profiles:score-followers` → `klaviyo:sync-segments` → `shopify:sync-segments` → cache flush. Each step logs duration. Failures are logged but don't block subsequent steps.
 
 **Scheduled:** Daily at 06:00 via `routes/console.php`
+
+### `products:overview-report {--since=}`
+Generate Product Portfolio Overview PDF. Uses `DtcSalesQueryService` for DTC data and `OdooB2bSalesService` for B2B data. Default scope: last 6 months.
+
+### `report:march-dtc`
+March 2026 DTC sales report with PWK pre-order forecast. Uses `DtcSalesQueryService` for all queries.
+
+### `report:march-record`
+March 2026 record month report for team Slack update. Uses `DtcSalesQueryService` for all queries including YoY comparison and channel breakdown.
