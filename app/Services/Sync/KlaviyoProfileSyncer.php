@@ -30,6 +30,7 @@ class KlaviyoProfileSyncer
     {
         $this->syncedCount = 0;
         $this->startTimeBudget();
+        DB::connection()->disableQueryLog();
 
         Log::info('Klaviyo profile sync starting', [
             'incremental' => $since !== null,
@@ -38,7 +39,7 @@ class KlaviyoProfileSyncer
 
         $query = [
             'additional-fields[profile]' => 'predictive_analytics',
-            'page[size]' => 100,
+            'page[size]' => 50,
         ];
 
         if ($since) {
