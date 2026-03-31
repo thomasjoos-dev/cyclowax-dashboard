@@ -72,12 +72,16 @@ class KlaviyoClient
         do {
             $response = $this->requestWithRetry('GET', $url, $query);
             $json = $response->json();
+            unset($response);
 
-            foreach ($json['data'] ?? [] as $item) {
+            $items = $json['data'] ?? [];
+            $nextUrl = $json['links']['next'] ?? null;
+            unset($json);
+
+            foreach ($items as $item) {
                 yield $item;
             }
-
-            $nextUrl = $json['links']['next'] ?? null;
+            unset($items);
 
             if ($nextUrl) {
                 // Parse the next URL and extract query params to avoid double-encoding

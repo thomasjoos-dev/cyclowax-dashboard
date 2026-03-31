@@ -80,6 +80,7 @@ class KlaviyoProfileSyncer
         });
 
         $this->syncedCount += count($rows);
+        gc_collect_cycles();
 
         Log::info('Klaviyo profiles batch upserted', ['batch_size' => count($rows), 'total' => $this->syncedCount]);
     }
