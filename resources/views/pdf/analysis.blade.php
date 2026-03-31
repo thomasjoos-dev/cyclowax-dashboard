@@ -15,9 +15,9 @@
 
         body {
             font-family: 'Greycliff', sans-serif;
-            font-size: 9.5pt;
+            font-size: 10.5pt;
             color: #1a1a1a;
-            line-height: 1.5;
+            line-height: 1.55;
             padding: 40px;
         }
 
@@ -48,16 +48,16 @@
         }
 
         .subtitle {
-            font-size: 9pt;
+            font-size: 10pt;
             color: #888888;
             margin-bottom: 4px;
         }
 
         .intro {
-            font-size: 8.5pt;
+            font-size: 9.5pt;
             color: #555555;
-            line-height: 1.45;
-            margin-bottom: 16px;
+            line-height: 1.5;
+            margin-bottom: 18px;
         }
 
         /* ── Badge (red label, white text, rounded) ── */
@@ -65,7 +65,7 @@
             display: inline-block;
             background-color: #F23036;
             color: #ffffff;
-            font-size: 7pt;
+            font-size: 7.5pt;
             font-weight: bold;
             text-transform: uppercase;
             letter-spacing: 1px;
@@ -111,7 +111,7 @@
         }
 
         .metric-value {
-            font-size: 16pt;
+            font-size: 18pt;
             font-weight: bold;
             color: #000000;
             line-height: 1.15;
@@ -119,17 +119,27 @@
         }
 
         .metric-change {
-            font-size: 8pt;
+            font-size: 9pt;
             color: #888888;
         }
 
         /* ── Section headers ── */
         h2 {
-            font-size: 11pt;
+            font-size: 12pt;
             font-weight: bold;
             color: #000000;
             text-transform: uppercase;
             letter-spacing: 0.8px;
+            margin-top: 18px;
+            margin-bottom: 8px;
+        }
+
+        h3 {
+            font-size: 9.5pt;
+            font-weight: bold;
+            color: #555555;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
             margin-top: 14px;
             margin-bottom: 6px;
         }
@@ -138,8 +148,8 @@
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 8px;
-            font-size: 9pt;
+            margin-bottom: 20px;
+            font-size: 10pt;
         }
 
         thead th {
@@ -147,15 +157,15 @@
             color: #888888;
             font-weight: bold;
             text-align: left;
-            padding: 6px 12px;
-            font-size: 7.5pt;
+            padding: 8px 12px;
+            font-size: 8.5pt;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             border-bottom: 1px solid #e0e0e0;
         }
 
         tbody td {
-            padding: 6px 12px;
+            padding: 8px 12px;
             border-bottom: 1px solid #f0f0f0;
             color: #1a1a1a;
         }
@@ -187,10 +197,10 @@
             background-color: #fafafa;
             border: 1px solid #e0e0e0;
             border-radius: 8px;
-            padding: 10px 14px;
-            margin: 8px 0;
-            line-height: 1.55;
-            font-size: 9pt;
+            padding: 14px 18px;
+            margin: 10px 0;
+            line-height: 1.6;
+            font-size: 10pt;
         }
 
         .analysis-card p {
@@ -360,6 +370,9 @@
     @foreach($sections as $section)
         @if($section['type'] === 'heading')
             <h2>{{ $section['content'] }}</h2>
+
+        @elseif($section['type'] === 'subheading')
+            <h3>{{ $section['content'] }}</h3>
 
         @elseif($section['type'] === 'text')
             <p style="margin-bottom: 10px;">{!! $section['content'] !!}</p>
