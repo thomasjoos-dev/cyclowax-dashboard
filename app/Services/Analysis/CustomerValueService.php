@@ -2,6 +2,7 @@
 
 namespace App\Services\Analysis;
 
+use App\Support\DbDialect;
 use Illuminate\Support\Facades\DB;
 
 class CustomerValueService
@@ -45,11 +46,11 @@ class CustomerValueService
     {
         $since ??= $this->since;
 
-        return DB::select("
+        return DB::select('
             WITH customer_ltv AS (
                 SELECT
                     sc.id,
-                    strftime('%Y-%m', sc.first_order_at) as cohort,
+                    '.DbDialect::yearMonthExpr('sc.first_order_at')." as cohort,
                     ROUND(SUM(so.net_revenue), 2) as total_ltv
                 FROM shopify_customers sc
                 JOIN shopify_orders so ON so.customer_id = sc.id

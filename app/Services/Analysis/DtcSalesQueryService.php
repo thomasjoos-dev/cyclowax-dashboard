@@ -319,9 +319,11 @@ class DtcSalesQueryService
         $where = implode(' AND ', $conditions);
         $joinProducts = $category !== null ? 'LEFT JOIN products p ON li.product_id = p.id' : '';
 
+        $yearWeek = DbDialect::yearWeekExpr('o.ordered_at');
+
         return DB::select("
             SELECT
-                strftime('%Y-%W', o.ordered_at) as week,
+                {$yearWeek} as week,
                 MIN(DATE(o.ordered_at)) as week_start,
                 MAX(DATE(o.ordered_at)) as week_end,
                 SUM(li.quantity) as units,
@@ -342,9 +344,11 @@ class DtcSalesQueryService
      */
     public function monthlyOrderTrend(string $from, string $to): array
     {
+        $yearMonth = DbDialect::yearMonthExpr('ordered_at');
+
         return DB::select("
             SELECT
-                strftime('%Y-%m', ordered_at) as month,
+                {$yearMonth} as month,
                 COUNT(*) as total_orders,
                 ROUND(SUM(net_revenue), 2) as net_revenue,
                 ROUND(SUM(gross_margin), 2) as gross_margin,
@@ -353,7 +357,7 @@ class DtcSalesQueryService
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
               AND financial_status NOT IN ('voided', 'refunded')
-            GROUP BY strftime('%Y-%m', ordered_at)
+            GROUP BY month
             ORDER BY month
         ", [$from, $to]);
     }
@@ -365,9 +369,11 @@ class DtcSalesQueryService
      */
     public function weeklyOrderPattern(string $from, string $to): array
     {
+        $week = DbDialect::weekExpr('ordered_at');
+
         return DB::select("
             SELECT
-                strftime('%W', ordered_at) as week_nr,
+                {$week} as week_nr,
                 MIN(DATE(ordered_at)) as week_start,
                 MAX(DATE(ordered_at)) as week_end,
                 COUNT(*) as orders,

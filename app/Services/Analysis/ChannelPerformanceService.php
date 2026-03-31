@@ -2,6 +2,7 @@
 
 namespace App\Services\Analysis;
 
+use App\Support\DbDialect;
 use Illuminate\Support\Facades\DB;
 
 class ChannelPerformanceService
@@ -167,9 +168,12 @@ class ChannelPerformanceService
         $since = now()->subMonths($months)->startOfMonth()->toDateString();
         $until = now()->addDay()->toDateString();
 
+        $yearMonth = DbDialect::yearMonthExpr('date');
+        $yearMonthOrdered = DbDialect::yearMonthExpr('ordered_at');
+
         $monthlySpend = DB::select("
             SELECT
-                strftime('%Y-%m', date) as month,
+                {$yearMonth} as month,
                 platform,
                 ROUND(SUM(spend), 2) as spend
             FROM ad_spends
@@ -180,7 +184,7 @@ class ChannelPerformanceService
 
         $monthlyOrders = DB::select("
             SELECT
-                strftime('%Y-%m', ordered_at) as month,
+                {$yearMonthOrdered} as month,
                 refined_channel,
                 COUNT(*) as first_orders
             FROM shopify_orders

@@ -3,6 +3,7 @@
 namespace App\Services\Forecast;
 
 use App\Models\SeasonalIndex;
+use App\Support\DbDialect;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -71,8 +72,8 @@ class SeasonalIndexCalculator
     {
         $query = DB::table('shopify_orders')
             ->whereNotIn('financial_status', ['voided', 'refunded'])
-            ->selectRaw("CAST(strftime('%m', ordered_at) AS INTEGER) as month")
-            ->selectRaw("strftime('%Y', ordered_at) as year")
+            ->selectRaw(DbDialect::monthExpr('ordered_at').' as month')
+            ->selectRaw(DbDialect::yearExpr('ordered_at').' as year')
             ->selectRaw('COUNT(*) as order_count')
             ->groupBy('year', 'month')
             ->orderBy('year')

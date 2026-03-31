@@ -5,6 +5,7 @@ namespace App\Services\Scoring;
 use App\Enums\CustomerSegment;
 use App\Models\RiderProfile;
 use App\Models\ShopifyCustomer;
+use App\Support\DbDialect;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -75,7 +76,7 @@ class RfmScoringService
         return DB::table('shopify_orders')
             ->select([
                 'customer_id',
-                DB::raw("CAST(julianday('{$now->toDateString()}') - julianday(MAX(ordered_at)) AS INTEGER) as days_since_last"),
+                DB::raw(DbDialect::daysSinceExpr('MAX(ordered_at)', $now->toDateString()).' as days_since_last'),
                 DB::raw('COUNT(*) as qualifying_order_count'),
                 DB::raw('ROUND(SUM(net_revenue), 2) as total_net_revenue'),
             ])

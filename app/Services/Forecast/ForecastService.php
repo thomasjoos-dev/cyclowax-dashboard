@@ -2,6 +2,7 @@
 
 namespace App\Services\Forecast;
 
+use App\Support\DbDialect;
 use Illuminate\Support\Facades\DB;
 
 class ForecastService
@@ -41,9 +42,9 @@ class ForecastService
      */
     public function monthlyActuals(string $from, string $to): array
     {
-        $rows = DB::select("
+        $rows = DB::select('
             SELECT
-                strftime('%Y-%m', ordered_at) as month,
+                '.DbDialect::yearMonthExpr('ordered_at')." as month,
                 ROUND(SUM(net_revenue), 0) as total_rev,
                 ROUND(SUM(CASE WHEN is_first_order = 1 THEN net_revenue ELSE 0 END), 0) as acq_rev,
                 ROUND(SUM(CASE WHEN is_first_order = 0 THEN net_revenue ELSE 0 END), 0) as rep_rev,

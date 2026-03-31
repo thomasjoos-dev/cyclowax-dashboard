@@ -3,6 +3,7 @@
 namespace App\Services\Analysis;
 
 use App\Models\RiderProfile;
+use App\Support\DbDialect;
 use Illuminate\Support\Facades\DB;
 
 class SegmentMovementService
@@ -72,9 +73,11 @@ class SegmentMovementService
     {
         $since = now()->subMonths($months)->startOfMonth()->toDateString();
 
+        $yearMonth = DbDialect::yearMonthExpr('occurred_at');
+
         return DB::select("
             SELECT
-                strftime('%Y-%m', occurred_at) as month,
+                {$yearMonth} as month,
                 type,
                 COUNT(*) as transitions
             FROM segment_transitions
