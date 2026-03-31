@@ -8,5 +8,5 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::command('sync:all')->everyTenMinutes()->withoutOverlapping(10);
+Schedule::command('sync:all')->dailyAt('06:00')->withoutOverlapping(10);
 Schedule::command('sync:all --full')->weeklyOn(0, '04:00')->withoutOverlapping(60);
