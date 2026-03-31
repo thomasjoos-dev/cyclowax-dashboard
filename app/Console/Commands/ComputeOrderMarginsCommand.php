@@ -2,314 +2,55 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Product;
-use App\Models\ShopifyCustomer;
-use App\Models\ShopifyLineItem;
-use App\Models\ShopifyOrder;
 use App\Services\ChannelClassificationService;
-use App\Services\ShippingCostEstimator;
+use App\Services\LineItemLinker;
+use App\Services\OrderMarginCalculator;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 #[Signature('orders:compute-margins {--full : Recompute all orders, not just new ones}')]
 #[Description('Link line items to products, compute net revenue/COGS/margin per order, and classify first orders')]
 class ComputeOrderMarginsCommand extends Command
 {
-    public function __construct(
-        private ChannelClassificationService $channelClassifier,
-    ) {
-        parent::__construct();
-    }
+    public function handle(
+        LineItemLinker $linker,
+        OrderMarginCalculator $calculator,
+        ChannelClassificationService $channelClassifier,
+    ): int {
+        $full = (bool) $this->option('full');
 
-    public function handle(): int
-    {
-        $this->linkLineItems();
-        $this->computeOrderMargins();
-        $this->classifyFirstOrders();
-        $this->classifyChannelTypes();
-        $this->classifyRefinedChannels();
-        $this->updateCustomerAggregates();
-
-        return self::SUCCESS;
-    }
-
-    protected function linkLineItems(): void
-    {
+        // 1. Link line items to products
         $this->info('Linking line items to products...');
-
-        $products = Product::all();
-        $skuMap = $products->pluck('id', 'sku')->toArray();
-        $barcodeMap = $products->pluck('id', 'barcode')->filter()->toArray();
-        $skuAliases = config('sku-aliases', []);
-        $titleMap = config('title-product-map', []);
-
-        $stats = ['sku' => 0, 'barcode' => 0, 'alias' => 0, 'title' => 0, 'cost' => 0];
-
-        ShopifyLineItem::query()
-            ->whereNull('product_id')
-            ->chunkById(1000, function ($lineItems) use ($skuMap, $barcodeMap, $skuAliases, $titleMap, &$stats) {
-                foreach ($lineItems as $lineItem) {
-                    $productId = $this->resolveProductId($lineItem, $skuMap, $barcodeMap, $skuAliases, $titleMap, $stats);
-
-                    if ($productId) {
-                        $updates = ['product_id' => $productId];
-
-                        if ($lineItem->cost_price === null) {
-                            $costPrice = Product::where('id', $productId)->value('cost_price');
-
-                            if ($costPrice) {
-                                $updates['cost_price'] = $costPrice;
-                                $stats['cost']++;
-                            }
-                        }
-
-                        $lineItem->update($updates);
-                    }
-                }
-            });
-
+        $stats = $linker->linkAll();
         $total = array_sum($stats) - $stats['cost'];
         $this->info("  Linked: {$total} (SKU: {$stats['sku']}, barcode: {$stats['barcode']}, alias: {$stats['alias']}, title: {$stats['title']}), COGS set: {$stats['cost']}");
-    }
 
-    /**
-     * Try to resolve a product ID using multiple matching strategies.
-     *
-     * @param  array<string, int>  $skuMap
-     * @param  array<string, int>  $barcodeMap
-     * @param  array<string, string>  $skuAliases
-     * @param  array<string, string>  $titleMap
-     * @param  array<string, int>  $stats
-     */
-    protected function resolveProductId(
-        ShopifyLineItem $lineItem,
-        array $skuMap,
-        array $barcodeMap,
-        array $skuAliases,
-        array $titleMap,
-        array &$stats,
-    ): ?int {
-        $sku = $lineItem->sku ? trim($lineItem->sku) : '';
-
-        if ($sku !== '') {
-            // 1. Direct SKU match
-            if (isset($skuMap[$sku])) {
-                $stats['sku']++;
-
-                return $skuMap[$sku];
-            }
-
-            // 2. Barcode match (EAN as SKU)
-            $stripped = ltrim($sku, '0');
-            $productId = $barcodeMap[$sku] ?? $barcodeMap[$stripped] ?? $barcodeMap['0'.$sku] ?? null;
-
-            if ($productId) {
-                $stats['barcode']++;
-
-                return $productId;
-            }
-
-            // 3. SKU alias (legacy numeric SKUs)
-            $aliasedSku = $skuAliases[$sku] ?? null;
-
-            if ($aliasedSku && isset($skuMap[$aliasedSku])) {
-                $stats['alias']++;
-
-                return $skuMap[$aliasedSku];
-            }
-        }
-
-        // 4. Product title match
-        $title = $lineItem->product_title ? mb_strtolower(trim($lineItem->product_title)) : '';
-        $mappedSku = $titleMap[$title] ?? null;
-
-        if ($mappedSku && isset($skuMap[$mappedSku])) {
-            $stats['title']++;
-
-            return $skuMap[$mappedSku];
-        }
-
-        return null;
-    }
-
-    protected function computeOrderMargins(): void
-    {
-        $full = $this->option('full');
+        // 2. Compute margins
         $this->info($full ? 'Recomputing ALL order margins...' : 'Computing margins for new orders...');
-
-        $feePercentage = config('fees.payment.percentage', 1.9) / 100;
-        $feeFixed = config('fees.payment.fixed', 0.25);
-        $estimator = app(ShippingCostEstimator::class);
-
-        $computed = 0;
-
-        $query = ShopifyOrder::query();
-
-        if (! $full) {
-            $query->whereNull('net_revenue');
-        }
-
-        $query->chunkById(500, function ($orders) use (&$computed, $feePercentage, $feeFixed, $estimator) {
-            foreach ($orders as $order) {
-                $totalCost = $order->lineItems()
-                    ->whereNotNull('cost_price')
-                    ->selectRaw('SUM(cost_price * quantity) as total')
-                    ->value('total') ?? 0;
-
-                $paymentFee = round($order->total_price * $feePercentage + $feeFixed, 2);
-                $netRevenue = round($order->total_price - $order->tax - $order->refunded, 2);
-
-                // Shipping cost: use exact (from Odoo) or estimate
-                $shippingCost = $order->shipping_cost;
-                $estimated = $order->shipping_cost_estimated;
-
-                if ($shippingCost === null) {
-                    $shippingCost = $estimator->estimate($order->shipping_carrier, $order->shipping_country_code);
-                    $estimated = true;
-                }
-
-                $shippingMargin = $shippingCost !== null
-                    ? round($order->shipping - $shippingCost, 2)
-                    : null;
-
-                $order->update([
-                    'net_revenue' => $netRevenue,
-                    'total_cost' => $totalCost,
-                    'payment_fee' => $paymentFee,
-                    'shipping_cost' => $shippingCost !== null ? round($shippingCost, 2) : null,
-                    'shipping_cost_estimated' => $estimated ?? false,
-                    'shipping_margin' => $shippingMargin,
-                    'gross_margin' => round($netRevenue - $totalCost - $paymentFee - ($shippingCost ?? 0), 2),
-                ]);
-
-                $computed++;
-            }
-        });
-
+        $computed = $calculator->computeMargins($full);
         $this->info("  Orders computed: {$computed}");
-    }
 
-    protected function classifyFirstOrders(): void
-    {
+        // 3. Classify first orders
         $this->info('Classifying first orders...');
-
-        $classified = 0;
-
-        ShopifyOrder::query()
-            ->whereNull('is_first_order')
-            ->whereNotNull('customer_id')
-            ->orderBy('ordered_at')
-            ->chunkById(500, function ($orders) use (&$classified) {
-                $firstOrderDates = ShopifyOrder::query()
-                    ->whereIn('customer_id', $orders->pluck('customer_id')->unique())
-                    ->groupBy('customer_id')
-                    ->selectRaw('customer_id, MIN(ordered_at) as first_ordered_at')
-                    ->pluck('first_ordered_at', 'customer_id');
-
-                foreach ($orders as $order) {
-                    $isFirst = $order->ordered_at <= ($firstOrderDates[$order->customer_id] ?? $order->ordered_at);
-                    $order->update(['is_first_order' => $isFirst]);
-                    $classified++;
-                }
-            });
-
-        // Orders without customer are always "first"
-        ShopifyOrder::query()
-            ->whereNull('is_first_order')
-            ->whereNull('customer_id')
-            ->update(['is_first_order' => true]);
-
+        $classified = $calculator->classifyFirstOrders();
         $this->info("  Classified: {$classified} orders");
-    }
 
-    protected function classifyChannelTypes(): void
-    {
+        // 4. Classify channels
         $this->info('Classifying channel types...');
+        $channelCount = $channelClassifier->classifyUnclassifiedOrders();
+        $this->info("  Classified: {$channelCount} orders");
 
-        $classified = 0;
+        // 5. Classify refined channels
+        $this->info($full ? 'Reclassifying ALL refined channels...' : 'Classifying refined channels...');
+        $refinedCount = $channelClassifier->classifyRefinedChannels($full);
+        $this->info("  Classified: {$refinedCount} orders");
 
-        ShopifyOrder::query()
-            ->whereNull('channel_type')
-            ->chunkById(1000, function ($orders) use (&$classified) {
-                foreach ($orders as $order) {
-                    $channelType = $this->channelClassifier->classifyChannelType($order);
-
-                    if ($channelType) {
-                        $order->update(['channel_type' => $channelType]);
-                        $classified++;
-                    }
-                }
-            });
-
-        $this->info("  Classified: {$classified} orders");
-    }
-
-    protected function classifyRefinedChannels(): void
-    {
-        $full = $this->option('full');
-        $this->info($full ? 'Reclassifying ALL refined channels...' : 'Classifying refined channels for new orders...');
-
-        $classified = 0;
-
-        $query = ShopifyOrder::query();
-
-        if (! $full) {
-            $query->whereNull('refined_channel');
-        }
-
-        $query->chunkById(1000, function ($orders) use (&$classified) {
-            foreach ($orders as $order) {
-                $refinedChannel = $this->channelClassifier->classifyRefinedChannel($order);
-
-                if ($refinedChannel) {
-                    $order->update(['refined_channel' => $refinedChannel]);
-                    $classified++;
-                }
-            }
-        });
-
-        $this->info("  Classified: {$classified} orders");
-    }
-
-    protected function updateCustomerAggregates(): void
-    {
+        // 6. Update customer aggregates
         $this->info('Updating customer aggregates...');
-
-        $updated = 0;
-
-        ShopifyCustomer::query()
-            ->chunkById(500, function ($customers) use (&$updated) {
-                $customerIds = $customers->pluck('id');
-
-                $stats = DB::table('shopify_orders')
-                    ->whereIn('customer_id', $customerIds)
-                    ->groupBy('customer_id')
-                    ->selectRaw('customer_id, COUNT(*) as order_count, COALESCE(SUM(total_cost), 0) as total_cost')
-                    ->get()
-                    ->keyBy('customer_id');
-
-                $firstOrders = ShopifyOrder::query()
-                    ->whereIn('customer_id', $customerIds)
-                    ->where('is_first_order', true)
-                    ->get(['customer_id', 'channel_type', 'refined_channel'])
-                    ->keyBy('customer_id');
-
-                foreach ($customers as $customer) {
-                    $stat = $stats[$customer->id] ?? null;
-                    $firstOrder = $firstOrders[$customer->id] ?? null;
-
-                    $customer->update([
-                        'local_orders_count' => $stat?->order_count ?? 0,
-                        'total_cost' => $stat?->total_cost ?? 0,
-                        'first_order_channel' => $firstOrder?->refined_channel ?? $firstOrder?->channel_type,
-                    ]);
-
-                    $updated++;
-                }
-            });
-
+        $updated = $calculator->updateCustomerAggregates();
         $this->info("  Customers updated: {$updated}");
+
+        return self::SUCCESS;
     }
 }

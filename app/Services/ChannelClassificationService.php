@@ -231,4 +231,54 @@ class ChannelClassificationService
 
         return 'unknown';
     }
+
+    /**
+     * Classify channel_type for all orders that don't have one yet.
+     */
+    public function classifyUnclassifiedOrders(): int
+    {
+        $classified = 0;
+
+        ShopifyOrder::query()
+            ->whereNull('channel_type')
+            ->chunkById(1000, function ($orders) use (&$classified) {
+                foreach ($orders as $order) {
+                    $channelType = $this->classifyChannelType($order);
+
+                    if ($channelType) {
+                        $order->update(['channel_type' => $channelType]);
+                        $classified++;
+                    }
+                }
+            });
+
+        return $classified;
+    }
+
+    /**
+     * Classify refined_channel for orders. When full=true, reclassifies all orders.
+     */
+    public function classifyRefinedChannels(bool $full = false): int
+    {
+        $classified = 0;
+
+        $query = ShopifyOrder::query();
+
+        if (! $full) {
+            $query->whereNull('refined_channel');
+        }
+
+        $query->chunkById(1000, function ($orders) use (&$classified) {
+            foreach ($orders as $order) {
+                $refinedChannel = $this->classifyRefinedChannel($order);
+
+                if ($refinedChannel) {
+                    $order->update(['refined_channel' => $refinedChannel]);
+                    $classified++;
+                }
+            }
+        });
+
+        return $classified;
+    }
 }
