@@ -94,14 +94,36 @@ class ShopifyAuthCommand extends Command
         $accessToken = $response->json('access_token');
         $grantedScopes = $response->json('scope');
 
+        $masked = substr($accessToken, 0, 6).'…'.substr($accessToken, -4);
+
         $this->newLine();
-        $this->components->twoColumnDetail('Access Token', $accessToken);
+        $this->components->twoColumnDetail('Access Token', $masked);
         $this->components->twoColumnDetail('Scopes', $grantedScopes);
         $this->newLine();
-        $this->components->info('Add this to your .env file:');
-        $this->line("  SHOPIFY_ACCESS_TOKEN={$accessToken}");
+
+        if ($this->confirm('Write token to .env automatically?', true)) {
+            $envPath = base_path('.env');
+            $envContents = file_get_contents($envPath);
+
+            if (str_contains($envContents, 'SHOPIFY_ACCESS_TOKEN=')) {
+                $envContents = preg_replace(
+                    '/^SHOPIFY_ACCESS_TOKEN=.*$/m',
+                    "SHOPIFY_ACCESS_TOKEN={$accessToken}",
+                    $envContents,
+                );
+            } else {
+                $envContents .= "\nSHOPIFY_ACCESS_TOKEN={$accessToken}\n";
+            }
+
+            file_put_contents($envPath, $envContents);
+            $this->components->info("Token written to .env ({$masked})");
+        } else {
+            $this->components->warn('Copy the token from your terminal — it will not be shown again.');
+            $this->line("  SHOPIFY_ACCESS_TOKEN={$accessToken}");
+        }
+
         $this->newLine();
-        $this->components->warn('This token is shown only once. Store it securely.');
+        $this->components->warn('Store this token securely. Do not commit it to version control.');
 
         return self::SUCCESS;
     }
