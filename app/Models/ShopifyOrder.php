@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Database\Factories\ShopifyOrderFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -32,6 +33,24 @@ class ShopifyOrder extends Model
     }
 
     /**
+     * Exclude voided and refunded orders — the most common filter in the codebase.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeValid(Builder $query): void
+    {
+        $query->whereNotIn('financial_status', ['voided', 'refunded', 'VOIDED', 'REFUNDED']);
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    public function scopePaid(Builder $query): void
+    {
+        $query->whereIn('financial_status', ['paid', 'PAID']);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
@@ -44,6 +63,14 @@ class ShopifyOrder extends Model
             'tax' => 'decimal:2',
             'discounts' => 'decimal:2',
             'refunded' => 'decimal:2',
+            'net_revenue' => 'decimal:2',
+            'total_cost' => 'decimal:2',
+            'payment_fee' => 'decimal:2',
+            'gross_margin' => 'decimal:2',
+            'shipping_cost' => 'decimal:2',
+            'shipping_margin' => 'decimal:2',
+            'is_first_order' => 'boolean',
+            'shipping_cost_estimated' => 'boolean',
         ];
     }
 }

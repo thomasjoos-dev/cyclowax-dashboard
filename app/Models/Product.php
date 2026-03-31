@@ -7,6 +7,7 @@ use App\Enums\JourneyPhase;
 use App\Enums\PortfolioRole;
 use App\Enums\ProductCategory;
 use App\Enums\WaxRecipe;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,6 +18,30 @@ class Product extends Model
     use HasFactory;
 
     protected $guarded = [];
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    public function scopeActive(Builder $query): void
+    {
+        $query->where('is_active', true)->where('is_discontinued', false);
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    public function scopeDiscontinued(Builder $query): void
+    {
+        $query->where('is_discontinued', true);
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    public function scopeByCategory(Builder $query, ProductCategory $category): void
+    {
+        $query->where('product_category', $category);
+    }
 
     /**
      * @return array<string, string>

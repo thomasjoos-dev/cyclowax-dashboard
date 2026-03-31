@@ -2,8 +2,11 @@
 
 namespace App\Models;
 
+use App\Enums\CustomerSegment;
+use App\Enums\FollowerSegment;
 use App\Enums\LifecycleStage;
 use Database\Factories\RiderProfileFactory;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -38,6 +41,26 @@ class RiderProfile extends Model
     public function segmentTransitions(): HasMany
     {
         return $this->hasMany(SegmentTransition::class);
+    }
+
+    /**
+     * Resolve the segment string to the correct enum based on lifecycle stage.
+     *
+     * @return Attribute<CustomerSegment|FollowerSegment|null, never>
+     */
+    protected function typedSegment(): Attribute
+    {
+        return Attribute::get(function (): CustomerSegment|FollowerSegment|null {
+            if ($this->attributes['segment'] === null) {
+                return null;
+            }
+
+            if ($this->lifecycle_stage === LifecycleStage::Customer) {
+                return CustomerSegment::tryFrom($this->attributes['segment']);
+            }
+
+            return FollowerSegment::tryFrom($this->attributes['segment']);
+        });
     }
 
     /**
