@@ -6,7 +6,7 @@ use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\ProductController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('v1')->group(function () {
+Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
     Route::get('dashboard', DashboardApiController::class);
 
     Route::get('orders', [OrderController::class, 'index']);

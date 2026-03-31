@@ -3,24 +3,24 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\ListProductsRequest;
 use App\Http\Resources\ShopifyProductResource;
 use App\Models\ShopifyProduct;
-use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class ProductController extends Controller
 {
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(ListProductsRequest $request): AnonymousResourceCollection
     {
         $query = ShopifyProduct::query()
             ->orderBy('title');
 
         if ($request->has('status')) {
-            $query->where('status', $request->query('status'));
+            $query->where('status', $request->validated('status'));
         }
 
         if ($request->has('product_type')) {
-            $query->where('product_type', $request->query('product_type'));
+            $query->where('product_type', $request->validated('product_type'));
         }
 
         return ShopifyProductResource::collection(

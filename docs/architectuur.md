@@ -9,6 +9,7 @@
 | Styling | Tailwind CSS v4, ShadCN UI, tweakcn Lara theme |
 | Charts | Recharts |
 | Database | SQLite (local), migreerbaar naar MySQL/PostgreSQL |
+| Auth | Fortify (session/login), Sanctum (API tokens) |
 | Shopify | GraphQL Admin API (2025-04), custom client |
 | Odoo | JSON-RPC External API, custom client |
 | Klaviyo | REST API v2024-10-15, custom client |
@@ -95,6 +96,27 @@ Margin Computation
         ├── is_first_order classificatie
         └── Customer aggregates (local_orders_count, total_cost, first_order_channel)
 ```
+
+## Authenticatie & Autorisatie
+
+### Auth stack
+- **Fortify** — headless auth backend: login, registratie, wachtwoord reset, 2FA, e-mailverificatie
+- **Sanctum** — hybride guard: session-based auth (SPA/browser) + token-based auth (externe clients)
+
+### Route beveiliging
+| Route groep | Middleware | Doel |
+|-------------|-----------|------|
+| `/` (welcome) | geen | Publiek |
+| `/dashboard`, `/docs/*` | `auth`, `verified` | Ingelogde, geverifieerde gebruikers |
+| `/settings/*` | `auth` (+`verified` voor destructieve acties) | Account instellingen |
+| `/api/v1/*` | `auth:sanctum` | API — session cookie of Bearer token |
+
+### API input validatie
+Alle API list-endpoints gebruiken FormRequests (`App\Http\Requests\Api\V1\*`):
+- `per_page` gekapt op max 100
+- Datums gevalideerd als date format
+- Enum velden alleen bekende waarden toegestaan
+- Ongeldige input → `422 Unprocessable Entity` met validatiefouten
 
 ## Dataflow
 
@@ -287,3 +309,9 @@ Alle omzetcijfers zijn **netto** (excl. BTW): `total_price - tax`. Dit geldt voo
 - OAuth 2.0 one-time token exchange → offline `shpat_*` token
 - Token opgeslagen in `.env` (nooit in git)
 - Client ID/Secret alleen nodig voor initiële token exchange
+
+## Dashboard authenticatie
+- Fortify regelt login flow (session-based, met optionele 2FA)
+- Sanctum `auth:sanctum` guard op alle API v1 routes
+- SPA (Inertia) gebruikt automatisch session cookie — geen extra config nodig
+- Externe clients gebruiken Bearer token: `$user->createToken('naam')->plainTextToken`

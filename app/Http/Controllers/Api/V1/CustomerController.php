@@ -3,28 +3,28 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\ListCustomersRequest;
 use App\Http\Resources\ShopifyCustomerResource;
 use App\Models\ShopifyCustomer;
-use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class CustomerController extends Controller
 {
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(ListCustomersRequest $request): AnonymousResourceCollection
     {
         $query = ShopifyCustomer::query()
             ->orderByDesc('last_order_at');
 
         if ($request->has('from')) {
-            $query->where('first_order_at', '>=', $request->query('from'));
+            $query->where('first_order_at', '>=', $request->validated('from'));
         }
 
         if ($request->has('to')) {
-            $query->where('first_order_at', '<=', $request->query('to'));
+            $query->where('first_order_at', '<=', $request->validated('to'));
         }
 
         if ($request->has('country_code')) {
-            $query->where('country_code', $request->query('country_code'));
+            $query->where('country_code', $request->validated('country_code'));
         }
 
         if ($request->has('min_orders')) {

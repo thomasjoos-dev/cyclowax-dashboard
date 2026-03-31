@@ -8,12 +8,14 @@ Route::inertia('/', 'welcome', [
     'canRegister' => Features::enabled(Features::registration()),
 ])->name('home');
 
-Route::get('dashboard', DashboardController::class)->name('dashboard');
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('dashboard', DashboardController::class)->name('dashboard');
 
-Route::prefix('docs')->name('docs.')->group(function () {
-    Route::inertia('api', 'docs/api')->name('api');
-    Route::inertia('architecture', 'docs/architecture')->name('architecture');
-    Route::inertia('styleguide', 'docs/styleguide')->name('styleguide');
+    Route::prefix('docs')->name('docs.')->group(function () {
+        Route::inertia('api', 'docs/api')->name('api');
+        Route::inertia('architecture', 'docs/architecture')->name('architecture');
+        Route::inertia('styleguide', 'docs/styleguide')->name('styleguide');
+    });
 });
 
 require __DIR__.'/settings.php';

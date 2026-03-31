@@ -131,22 +131,47 @@ Renders the main dashboard page via Inertia.
 ## REST API (v1)
 
 Base URL: `/api/v1/`
-Auth: Currently unauthenticated (Sanctum planned for external access)
+
+### Authentication
+
+All API v1 endpoints require authentication via **Laravel Sanctum** (`auth:sanctum` middleware).
+
+Two authentication methods are supported:
+1. **Session cookie** — automatic for the Inertia SPA (browser sends session cookie)
+2. **API token** — for external clients (n8n, scripts, future apps). Send `Authorization: Bearer <token>` header.
+
+**Creating tokens** (via tinker or future admin panel):
+```php
+$user->createToken('integration-name', ['orders:read', 'products:read']);
+```
+
+Unauthenticated requests receive `401 Unauthorized`.
+
+### Input Validation
+
+All list endpoints validate input via FormRequests. Invalid input returns `422 Unprocessable Entity` with validation errors.
+
+Common rules:
+- `per_page` is capped at **100** (prevents full table dumps)
+- Date parameters must be valid dates; `to` must be `>=` `from`
+- Enum parameters only accept known values
 
 ### `GET /api/v1/dashboard?period=mtd|qtd|ytd`
 Returns all dashboard metrics as JSON. Same data as the Inertia dashboard but as a single JSON response.
 
+**Validation:** `period` must be one of `mtd`, `qtd`, `ytd`.
+
 ### `GET /api/v1/orders`
 Paginated order list with customer and line items included.
 
-| Param | Type | Description |
-|-------|------|-------------|
-| `from` | date | Filter orders from this date |
-| `to` | date | Filter orders until this date |
-| `shipping_country` | string | Filter by shipping country (e.g. `US`) |
-| `billing_country` | string | Filter by billing country (e.g. `DE`) |
-| `financial_status` | string | Filter by status (e.g. `PAID`) |
-| `per_page` | int | Items per page (default: 50) |
+| Param | Type | Validation | Description |
+|-------|------|------------|-------------|
+| `from` | date | Valid date | Filter orders from this date |
+| `to` | date | Valid date, `>= from` | Filter orders until this date |
+| `shipping_country` | string | Exactly 2 chars | Filter by shipping country (e.g. `US`) |
+| `billing_country` | string | Exactly 2 chars | Filter by billing country (e.g. `DE`) |
+| `financial_status` | string | `PAID`, `PENDING`, `REFUNDED`, `PARTIALLY_REFUNDED` | Filter by status |
+| `per_page` | int | 1–100 | Items per page (default: 50) |
 
 **Order Resource fields:**
 - Financial: `total_price`, `subtotal`, `shipping`, `tax`, `discounts`, `refunded`, `net_revenue`, `currency`
@@ -159,13 +184,13 @@ Single order with customer and line items.
 ### `GET /api/v1/customers`
 Paginated customer list.
 
-| Param | Type | Description |
-|-------|------|-------------|
-| `from` | date | Filter by first_order_at from |
-| `to` | date | Filter by first_order_at until |
-| `country_code` | string | Filter by country |
-| `min_orders` | int | Minimum order count |
-| `per_page` | int | Items per page (default: 50) |
+| Param | Type | Validation | Description |
+|-------|------|------------|-------------|
+| `from` | date | Valid date | Filter by first_order_at from |
+| `to` | date | Valid date, `>= from` | Filter by first_order_at until |
+| `country_code` | string | Exactly 2 chars | Filter by country |
+| `min_orders` | int | `>= 0` | Minimum order count |
+| `per_page` | int | 1–100 | Items per page (default: 50) |
 
 ### `GET /api/v1/customers/{id}`
 Single customer.
@@ -173,11 +198,11 @@ Single customer.
 ### `GET /api/v1/products`
 Paginated product list.
 
-| Param | Type | Description |
-|-------|------|-------------|
-| `status` | string | Filter by status (e.g. `active`) |
-| `product_type` | string | Filter by product type |
-| `per_page` | int | Items per page (default: 50) |
+| Param | Type | Validation | Description |
+|-------|------|------------|-------------|
+| `status` | string | `active`, `draft`, `archived` | Filter by status |
+| `product_type` | string | Max 100 chars | Filter by product type |
+| `per_page` | int | 1–100 | Items per page (default: 50) |
 
 ### `GET /api/v1/products/{id}`
 Single product.

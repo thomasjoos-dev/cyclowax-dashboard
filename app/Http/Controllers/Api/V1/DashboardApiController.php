@@ -3,15 +3,15 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\DashboardApiRequest;
 use App\Services\DashboardService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 class DashboardApiController extends Controller
 {
-    public function __invoke(Request $request, DashboardService $dashboard): JsonResponse
+    public function __invoke(DashboardApiRequest $request, DashboardService $dashboard): JsonResponse
     {
-        $period = $request->query('period', 'mtd');
+        $period = $request->validated('period', 'mtd');
 
         return response()->json([
             'period' => $period,
