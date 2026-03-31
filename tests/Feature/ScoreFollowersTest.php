@@ -37,7 +37,7 @@ it('assigns new segment for recent signups', function () {
         'last_event_date' => now()->subDays(2),
     ]);
 
-    $scorer = new FollowerScorer;
+    $scorer = app(FollowerScorer::class);
     $scorer->score();
 
     expect(RiderProfile::first()->segment)->toBe(FollowerSegment::New->value);
@@ -53,7 +53,7 @@ it('assigns hot_lead over new when intent is high', function () {
         'site_visits' => 3,
     ]);
 
-    $scorer = new FollowerScorer;
+    $scorer = app(FollowerScorer::class);
     $scorer->score();
 
     expect(RiderProfile::first()->segment)->toBe(FollowerSegment::HotLead->value);
@@ -72,7 +72,7 @@ it('assigns hot_lead for abandoned cart with recent activity', function () {
         'klaviyo_created_at' => now()->subMonths(3),
     ]);
 
-    $scorer = new FollowerScorer;
+    $scorer = app(FollowerScorer::class);
     $scorer->score();
 
     $cp = RiderProfile::first();
@@ -94,7 +94,7 @@ it('assigns high_potential for product viewers with engagement', function () {
         'klaviyo_created_at' => now()->subMonths(6),
     ]);
 
-    $scorer = new FollowerScorer;
+    $scorer = app(FollowerScorer::class);
     $scorer->score();
 
     $cp = RiderProfile::first();
@@ -116,7 +116,7 @@ it('assigns engaged for active email readers without product interest', function
         'klaviyo_created_at' => now()->subMonths(6),
     ]);
 
-    $scorer = new FollowerScorer;
+    $scorer = app(FollowerScorer::class);
     $scorer->score();
 
     $cp = RiderProfile::first();
@@ -136,7 +136,7 @@ it('assigns fading after 30 days of inactivity', function () {
         'klaviyo_created_at' => now()->subYear(),
     ]);
 
-    $scorer = new FollowerScorer;
+    $scorer = app(FollowerScorer::class);
     $scorer->score();
 
     expect(RiderProfile::first()->segment)->toBe(FollowerSegment::Fading->value);
@@ -153,7 +153,7 @@ it('assigns inactive after 90 days', function () {
         'klaviyo_created_at' => now()->subYears(2),
     ]);
 
-    $scorer = new FollowerScorer;
+    $scorer = app(FollowerScorer::class);
     $scorer->score();
 
     $cp = RiderProfile::first();
@@ -170,7 +170,7 @@ it('halves intent score when last event is older than 30 days', function () {
         'klaviyo_created_at' => now()->subYear(),
     ]);
 
-    $scorer = new FollowerScorer;
+    $scorer = app(FollowerScorer::class);
     $scorer->score();
 
     // Base intent = 4 (checkout started), halved to 2 because > 30 days
@@ -197,7 +197,7 @@ it('does not score customer profiles', function () {
         'klaviyo_profile_id' => $klaviyo->id,
     ]);
 
-    $scorer = new FollowerScorer;
+    $scorer = app(FollowerScorer::class);
     $scorer->score();
 
     expect(RiderProfile::first()->segment)->toBeNull()

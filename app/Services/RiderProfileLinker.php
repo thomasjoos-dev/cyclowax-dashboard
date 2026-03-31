@@ -11,12 +11,9 @@ use Illuminate\Support\Facades\Log;
 
 class RiderProfileLinker
 {
-    protected SegmentTransitionLogger $transitionLogger;
-
-    public function __construct()
-    {
-        $this->transitionLogger = new SegmentTransitionLogger;
-    }
+    public function __construct(
+        protected SegmentTransitionLogger $transitionLogger,
+    ) {}
 
     /**
      * Create and update unified rider profiles by matching email addresses.

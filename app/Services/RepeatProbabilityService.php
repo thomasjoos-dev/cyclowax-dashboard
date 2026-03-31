@@ -6,7 +6,12 @@ use Illuminate\Support\Facades\DB;
 
 class RepeatProbabilityService
 {
-    private string $since = '2024-01-01';
+    private string $since;
+
+    public function __construct()
+    {
+        $this->since = config('analytics.data_since');
+    }
 
     /**
      * Repeat probability per product category.

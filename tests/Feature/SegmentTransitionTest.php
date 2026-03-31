@@ -34,7 +34,7 @@ it('logs a transition when follower segment changes', function () {
         'segment' => FollowerSegment::Inactive->value,
     ]);
 
-    $scorer = new FollowerScorer;
+    $scorer = app(FollowerScorer::class);
     $scorer->score();
 
     $profile->refresh();
@@ -71,7 +71,7 @@ it('does not log a transition when segment stays the same', function () {
         'segment' => FollowerSegment::Inactive->value,
     ]);
 
-    $scorer = new FollowerScorer;
+    $scorer = app(FollowerScorer::class);
     $scorer->score();
 
     expect(SegmentTransition::count())->toBe(0);
@@ -97,7 +97,7 @@ it('logs a transition when follower scores for the first time', function () {
         'segment' => null,
     ]);
 
-    $scorer = new FollowerScorer;
+    $scorer = app(FollowerScorer::class);
     $scorer->score();
 
     $transition = SegmentTransition::first();
@@ -119,7 +119,7 @@ it('logs a lifecycle transition when follower becomes customer', function () {
 
     ShopifyCustomer::factory()->create(['email' => 'convert@test.com']);
 
-    $linker = new RiderProfileLinker;
+    $linker = app(RiderProfileLinker::class);
     $linker->link();
 
     $transition = SegmentTransition::where('type', 'lifecycle_change')->first();
@@ -133,7 +133,7 @@ it('logs a lifecycle transition when follower becomes customer', function () {
 it('does not log lifecycle transition for new customers without follower history', function () {
     ShopifyCustomer::factory()->create(['email' => 'new@test.com']);
 
-    $linker = new RiderProfileLinker;
+    $linker = app(RiderProfileLinker::class);
     $linker->link();
 
     expect(SegmentTransition::count())->toBe(0);

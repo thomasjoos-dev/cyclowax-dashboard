@@ -12,12 +12,9 @@ class FollowerScorer
 {
     protected int $scoredCount = 0;
 
-    protected SegmentTransitionLogger $transitionLogger;
-
-    public function __construct()
-    {
-        $this->transitionLogger = new SegmentTransitionLogger;
-    }
+    public function __construct(
+        protected SegmentTransitionLogger $transitionLogger,
+    ) {}
 
     /**
      * Calculate engagement scores, intent scores and assign segments for all follower profiles.
@@ -91,25 +88,29 @@ class FollowerScorer
 
     /**
      * Calculate a weighted engagement score (1-5).
-     * Weights: site visits 35%, email clicks 30%, email opens 20%, recency 15%.
      */
     protected function calculateEngagementScore(mixed $klaviyo): int
     {
+        $weights = config('scoring.engagement.weights');
+
         $received = max((int) $klaviyo->emails_received, 1);
         $clickRate = min((int) $klaviyo->emails_clicked / $received, 1.0);
         $openRate = min((int) $klaviyo->emails_opened / $received, 1.0);
         $siteTier = $this->siteTier((int) $klaviyo->site_visits);
         $recencyScore = $this->recencyScore($klaviyo->last_event_date);
 
-        $rawScore = ($siteTier * 0.35) + ($clickRate * 0.30) + ($openRate * 0.20) + ($recencyScore * 0.15);
+        $rawScore = ($siteTier * $weights['site_visits'])
+            + ($clickRate * $weights['email_clicks'])
+            + ($openRate * $weights['email_opens'])
+            + ($recencyScore * $weights['recency']);
 
-        return match (true) {
-            $rawScore >= 0.60 => 5,
-            $rawScore >= 0.40 => 4,
-            $rawScore >= 0.25 => 3,
-            $rawScore >= 0.10 => 2,
-            default => 1,
-        };
+        foreach (config('scoring.engagement.score_thresholds') as $score => $threshold) {
+            if ($rawScore >= $threshold) {
+                return $score;
+            }
+        }
+
+        return 1;
     }
 
     /**
@@ -117,13 +118,13 @@ class FollowerScorer
      */
     protected function siteTier(int $siteVisits): float
     {
-        return match (true) {
-            $siteVisits >= 11 => 1.0,
-            $siteVisits >= 6 => 0.8,
-            $siteVisits >= 3 => 0.6,
-            $siteVisits >= 1 => 0.3,
-            default => 0.0,
-        };
+        foreach (config('scoring.engagement.site_visit_tiers') as $min => $score) {
+            if ($siteVisits >= $min) {
+                return $score;
+            }
+        }
+
+        return 0.0;
     }
 
     /**
@@ -137,38 +138,39 @@ class FollowerScorer
 
         $daysSince = (int) $lastEventDate->diffInDays(now());
 
-        return match (true) {
-            $daysSince <= 7 => 1.0,
-            $daysSince <= 30 => 0.7,
-            $daysSince <= 90 => 0.3,
-            default => 0.0,
-        };
+        foreach (config('scoring.engagement.recency_days') as $maxDays => $score) {
+            if ($daysSince <= $maxDays) {
+                return $score;
+            }
+        }
+
+        return 0.0;
     }
 
     /**
      * Calculate intent score (0-4) based on highest funnel step reached.
-     * Halves if the highest event is older than 30 days.
+     * Halves if the highest event is older than the decay threshold.
      */
     protected function calculateIntentScore(mixed $klaviyo): int
     {
-        $baseScore = match (true) {
-            (int) $klaviyo->checkouts_started > 0 => 4,
-            (int) $klaviyo->cart_adds > 0 => 3,
-            (int) $klaviyo->product_views >= 2 => 2,
-            (int) $klaviyo->site_visits > 0 => 1,
-            default => 0,
-        };
+        $baseScore = 0;
+
+        foreach (config('scoring.engagement.intent_funnel') as $step) {
+            if ((int) $klaviyo->{$step['field']} >= $step['min']) {
+                $baseScore = $step['score'];
+                break;
+            }
+        }
 
         if ($baseScore === 0) {
             return 0;
         }
 
-        // Halve the score if last event is older than 30 days
         $daysSinceLastEvent = $klaviyo->last_event_date
             ? (int) $klaviyo->last_event_date->diffInDays(now())
             : 999;
 
-        if ($daysSinceLastEvent > 30) {
+        if ($daysSinceLastEvent > config('scoring.engagement.intent_decay_days')) {
             return (int) floor($baseScore / 2);
         }
 
@@ -180,6 +182,8 @@ class FollowerScorer
      */
     protected function determineSegment(mixed $klaviyo, int $engagementScore, int $intentScore): FollowerSegment
     {
+        $s = config('scoring.engagement.segments');
+
         $daysSinceSignup = $klaviyo->klaviyo_created_at
             ? (int) $klaviyo->klaviyo_created_at->diffInDays(now())
             : 999;
@@ -189,11 +193,11 @@ class FollowerScorer
             : 999;
 
         return match (true) {
-            $intentScore >= 3 && $daysSinceLastEvent <= 30 => FollowerSegment::HotLead,
-            $intentScore >= 2 && $engagementScore >= 3 && $daysSinceLastEvent <= 30 => FollowerSegment::HighPotential,
-            $daysSinceSignup < 30 => FollowerSegment::New,
-            $engagementScore >= 3 && $daysSinceLastEvent <= 30 => FollowerSegment::Engaged,
-            $daysSinceLastEvent > 30 && $daysSinceLastEvent <= 90 && ($engagementScore >= 2 || $intentScore >= 1) => FollowerSegment::Fading,
+            $intentScore >= $s['hot_lead_min_intent'] && $daysSinceLastEvent <= $s['hot_lead_max_days'] => FollowerSegment::HotLead,
+            $intentScore >= $s['high_potential_min_intent'] && $engagementScore >= $s['high_potential_min_engagement'] && $daysSinceLastEvent <= $s['high_potential_max_days'] => FollowerSegment::HighPotential,
+            $daysSinceSignup < $s['new_max_days_since_signup'] => FollowerSegment::New,
+            $engagementScore >= $s['engaged_min_engagement'] && $daysSinceLastEvent <= $s['engaged_max_days'] => FollowerSegment::Engaged,
+            $daysSinceLastEvent > $s['fading_min_days'] && $daysSinceLastEvent <= $s['fading_max_days'] && ($engagementScore >= $s['fading_min_engagement'] || $intentScore >= $s['fading_min_intent']) => FollowerSegment::Fading,
             default => FollowerSegment::Inactive,
         };
     }

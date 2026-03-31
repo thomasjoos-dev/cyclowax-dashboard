@@ -6,7 +6,12 @@ use Illuminate\Support\Facades\DB;
 
 class PurchaseLadderService
 {
-    private string $since = '2024-01-01';
+    private string $since;
+
+    public function __construct()
+    {
+        $this->since = config('analytics.data_since');
+    }
 
     /**
      * Customer cohort analysis by order count (1, 2, 3, 4, 5+).

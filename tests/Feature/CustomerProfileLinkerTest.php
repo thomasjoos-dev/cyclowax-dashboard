@@ -13,7 +13,7 @@ it('links Shopify customers with matching Klaviyo profiles', function () {
     $customer = ShopifyCustomer::factory()->create(['email' => 'jan@cyclowax.cc']);
     $profile = KlaviyoProfile::factory()->create(['email' => 'jan@cyclowax.cc']);
 
-    $linker = new RiderProfileLinker;
+    $linker = app(RiderProfileLinker::class);
     $result = $linker->link();
 
     expect($result['customers'])->toBe(1);
@@ -29,7 +29,7 @@ it('links Shopify customers with matching Klaviyo profiles', function () {
 it('creates follower profiles for Klaviyo-only subscribers', function () {
     KlaviyoProfile::factory()->create(['email' => 'follower@test.com']);
 
-    $linker = new RiderProfileLinker;
+    $linker = app(RiderProfileLinker::class);
     $result = $linker->link();
 
     expect($result['followers'])->toBe(1);
@@ -45,7 +45,7 @@ it('matches emails case-insensitively', function () {
     ShopifyCustomer::factory()->create(['email' => 'Jan@Cyclowax.CC']);
     KlaviyoProfile::factory()->create(['email' => 'jan@cyclowax.cc']);
 
-    $linker = new RiderProfileLinker;
+    $linker = app(RiderProfileLinker::class);
     $linker->link();
 
     expect(RiderProfile::count())->toBe(1);
@@ -62,7 +62,7 @@ it('is idempotent when run multiple times', function () {
     KlaviyoProfile::factory()->create(['email' => 'repeat@test.com']);
     KlaviyoProfile::factory()->create(['email' => 'follower@test.com']);
 
-    $linker = new RiderProfileLinker;
+    $linker = app(RiderProfileLinker::class);
     $linker->link();
     $linker->link();
 
@@ -73,7 +73,7 @@ it('skips profiles without email', function () {
     KlaviyoProfile::factory()->create(['email' => null]);
     KlaviyoProfile::factory()->create(['email' => '']);
 
-    $linker = new RiderProfileLinker;
+    $linker = app(RiderProfileLinker::class);
     $result = $linker->link();
 
     expect($result['followers'])->toBe(0)
@@ -83,7 +83,7 @@ it('skips profiles without email', function () {
 it('handles Shopify-only customers without Klaviyo profile', function () {
     ShopifyCustomer::factory()->create(['email' => 'shopify-only@test.com']);
 
-    $linker = new RiderProfileLinker;
+    $linker = app(RiderProfileLinker::class);
     $linker->link();
 
     $cp = RiderProfile::first();

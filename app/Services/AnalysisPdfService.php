@@ -63,7 +63,7 @@ class AnalysisPdfService
         $filename = str_replace(['_draft-', '_draft'], '', $filename);
 
         $finalDir = storage_path('app/data-analysis/final-reports');
-        $desktopDir = $_SERVER['HOME'].'/Desktop';
+        $desktopDir = config('analysis.output_path', ($_SERVER['HOME'] ?? '/tmp').'/Desktop');
 
         if (! is_dir($finalDir)) {
             mkdir($finalDir, 0755, true);

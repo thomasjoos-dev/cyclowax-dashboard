@@ -24,8 +24,13 @@ Browser
 
 Laravel
   └── DashboardController (Inertia render)
-        └── DashboardService (queries + caching)
-              └── Eloquent Models (ShopifyOrder, ShopifyCustomer, etc.)
+        └── DashboardService (delegator)
+              ├── RevenueAnalyticsService (KPIs, revenue split, AOV trend)
+              ├── AcquisitionAnalyticsService (trends, regions, growth rates)
+              ├── RetentionAnalyticsService (cohorts, time-to-second, order type split)
+              └── ProductAnalyticsService (top products first/returning)
+                    └── Eloquent Models (ShopifyOrder, ShopifyCustomer, etc.)
+                          └── App\Support\DbDialect (database-agnostic SQL expressions)
 
 Shopify Sync
   └── ShopifySyncOrdersCommand (artisan)
@@ -309,10 +314,19 @@ De API Resource groepeert attributie onder een `attribution` object met `first_t
 Alle omzetcijfers zijn **netto** (excl. BTW): `total_price - tax`. Dit geldt voor KPI omzet, revenue split, en AOV trend.
 
 ## Caching strategie
-- Elke `DashboardService` methode cached apart met unieke key
+- Elke analytics service cached apart met unieke keys (`dashboard:{domain}:{params}`)
 - TTL: 3600 seconden (1 uur)
+- Cache flush: `DashboardService::flushCache()` delegeert naar alle 4 analytics services
 - Cache flush: automatisch na `sync:all` pipeline
 - Cache driver: database (configureerbaar via `CACHE_STORE`)
+
+## Configuratie (custom)
+- `config/analytics.php` — `data_since` startdatum voor analyse queries (default: 2024-01-01)
+- `config/analysis.php` — `output_path` voor PDF rapport output (default: ~/Desktop)
+- `config/scoring.php` — RFM segment regels, frequency breakpoints, suspect profiel thresholds
+- `config/products.php` — discontinued dates, product configuratie
+- `config/fees.php` — payment fee percentages
+- `config/shipping-rates.php` — geschatte shipping kosten per carrier/land
 
 ## Shopify authenticatie
 - Custom App via Shopify Partners dev dashboard
