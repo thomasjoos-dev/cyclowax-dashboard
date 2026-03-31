@@ -127,7 +127,7 @@ Demand Forecast System
   │     └── ForecastTrackingService.updateActuals()
   └── GeneratePurchaseScheduleCommand (forecast:purchase-schedule {scenario})
         └── StockPlanningService
-              ├── demand forecast + huidige voorraad + SupplyConfig (lead time, MOQ, buffer)
+              ├── demand forecast + huidige voorraad + SupplyProfile (lead time, MOQ, buffer)
               ├── purchaseSchedule() → bestelmoment + hoeveelheid per categorie
               ├── categoryRunway() → forward-looking runway per categorie
               └── reorderTimeline() → chronologisch overzicht alle bestelacties
@@ -362,7 +362,7 @@ ScenarioProductMix
   ├── acq_share, repeat_share, avg_unit_price
   └── belongsTo → Scenario
 
-SupplyConfig
+SupplyProfile
   ├── product_category (unique), lead_time_days, moq, buffer_days
   └── supplier_name, notes
 

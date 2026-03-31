@@ -4,7 +4,7 @@ namespace App\Services\Forecast;
 
 use App\Enums\ProductCategory;
 use App\Models\Scenario;
-use App\Models\SupplyConfig;
+use App\Models\SupplyProfile;
 use Illuminate\Support\Facades\DB;
 
 class StockPlanningService
@@ -23,11 +23,11 @@ class StockPlanningService
     {
         $forecast = $this->demandForecastService->forecastYear($scenario, $year);
         $currentStock = $this->getCurrentStockByCategory();
-        $supplyConfigs = SupplyConfig::all()->keyBy(fn ($c) => $c->product_category->value);
+        $supplyProfiles = SupplyProfile::all()->keyBy(fn ($p) => $p->product_category->value);
 
         $schedule = [];
 
-        foreach ($supplyConfigs as $categoryValue => $config) {
+        foreach ($supplyProfiles as $categoryValue => $profile) {
             $stock = $currentStock[$categoryValue] ?? 0;
             $orders = [];
 
@@ -38,7 +38,7 @@ class StockPlanningService
                 $stock -= $demand;
 
                 // Look ahead: how much demand in the next lead_time + buffer days?
-                $lookaheadMonths = (int) ceil(($config->lead_time_days + $config->buffer_days) / 30);
+                $lookaheadMonths = (int) ceil(($profile->lead_time_days + $profile->buffer_days) / 30);
                 $futureDemand = 0;
                 for ($ahead = 1; $ahead <= $lookaheadMonths && ($month + $ahead) <= 12; $ahead++) {
                     $futureMonth = $month + $ahead;
@@ -48,14 +48,14 @@ class StockPlanningService
 
                 if ($stock < $futureDemand) {
                     // Need to order
-                    $orderQuantity = max($futureDemand - $stock, $config->moq);
+                    $orderQuantity = max($futureDemand - $stock, $profile->moq);
                     // Round up to MOQ multiples
-                    if ($orderQuantity > $config->moq) {
-                        $orderQuantity = (int) ceil($orderQuantity / $config->moq) * $config->moq;
+                    if ($orderQuantity > $profile->moq) {
+                        $orderQuantity = (int) ceil($orderQuantity / $profile->moq) * $profile->moq;
                     }
 
                     $orderDate = now()->setYear($year)->setMonth($month)->setDay(1)
-                        ->subDays($config->lead_time_days)
+                        ->subDays($profile->lead_time_days)
                         ->toDateString();
 
                     $orders[] = [

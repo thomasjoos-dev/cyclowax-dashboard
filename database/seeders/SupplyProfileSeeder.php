@@ -3,18 +3,18 @@
 namespace Database\Seeders;
 
 use App\Enums\ProductCategory;
-use App\Models\SupplyConfig;
+use App\Models\SupplyProfile;
 use Illuminate\Database\Seeder;
 
 /**
- * Seed initial supply chain parameters per product category.
+ * Seed initial supply chain profiles per product category.
  * Values are estimates — to be validated by operations team.
  */
-class SupplyConfigSeeder extends Seeder
+class SupplyProfileSeeder extends Seeder
 {
     public function run(): void
     {
-        $configs = [
+        $profiles = [
             [ProductCategory::WaxTablet, 45, 500, 14, 'Wax production'],
             [ProductCategory::PocketWax, 45, 200, 14, 'Wax production'],
             [ProductCategory::StarterKit, 60, 100, 21, 'Kit assembly'],
@@ -27,8 +27,8 @@ class SupplyConfigSeeder extends Seeder
             [ProductCategory::Cleaning, 45, 100, 14, 'Cleaning product supplier'],
         ];
 
-        foreach ($configs as [$category, $leadTime, $moq, $buffer, $supplier]) {
-            SupplyConfig::updateOrCreate(
+        foreach ($profiles as [$category, $leadTime, $moq, $buffer, $supplier]) {
+            SupplyProfile::updateOrCreate(
                 ['product_category' => $category->value],
                 [
                     'lead_time_days' => $leadTime,

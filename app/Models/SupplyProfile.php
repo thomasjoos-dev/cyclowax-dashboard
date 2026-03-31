@@ -6,7 +6,7 @@ use App\Enums\ProductCategory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class SupplyConfig extends Model
+class SupplyProfile extends Model
 {
     use HasFactory;
 

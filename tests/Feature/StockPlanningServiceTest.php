@@ -11,7 +11,7 @@ use App\Models\SeasonalIndex;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
-use App\Models\SupplyConfig;
+use App\Models\SupplyProfile;
 use App\Services\Forecast\StockPlanningService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -33,7 +33,7 @@ function setupStockPlanningScenario(): Scenario
         'recorded_at' => now(),
     ]);
 
-    SupplyConfig::create([
+    SupplyProfile::create([
         'product_category' => ProductCategory::WaxTablet->value,
         'lead_time_days' => 45,
         'moq' => 500,
