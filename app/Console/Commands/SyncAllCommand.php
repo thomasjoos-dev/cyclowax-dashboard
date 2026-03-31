@@ -123,7 +123,7 @@ class SyncAllCommand extends Command
             $artisanCommand .= ' --full';
         }
 
-        $result = Process::timeout(600)->run($artisanCommand);
+        $result = Process::timeout(900)->run($artisanCommand);
         $duration = round(microtime(true) - $start, 1);
 
         // Forward sub-process output so the pipeline log stays complete
