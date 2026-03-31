@@ -94,6 +94,43 @@ class KlaviyoClient
     }
 
     /**
+     * Paginate through results page by page, exposing the cursor for resumability.
+     * Each yielded value contains the page items and the next URL for cursor storage.
+     *
+     * @param  array<string, mixed>  $query
+     * @return \Generator<int, array{items: array<int, array<string, mixed>>, next_url: ?string}>
+     */
+    public function paginatePages(string $endpoint, array $query = [], ?string $startUrl = null): \Generator
+    {
+        $url = $startUrl ?? (self::BASE_URL.'/'.ltrim($endpoint, '/'));
+
+        if ($startUrl) {
+            $parsed = parse_url($startUrl);
+            $url = $parsed['scheme'].'://'.$parsed['host'].($parsed['path'] ?? '');
+            parse_str($parsed['query'] ?? '', $query);
+        }
+
+        do {
+            $response = $this->requestWithRetry('GET', $url, $query);
+            $json = $response->json();
+            unset($response);
+
+            $items = $json['data'] ?? [];
+            $nextUrl = $json['links']['next'] ?? null;
+            unset($json);
+
+            yield ['items' => $items, 'next_url' => $nextUrl];
+            unset($items);
+
+            if ($nextUrl) {
+                $parsed = parse_url($nextUrl);
+                $url = $parsed['scheme'].'://'.$parsed['host'].($parsed['path'] ?? '');
+                parse_str($parsed['query'] ?? '', $query);
+            }
+        } while ($nextUrl);
+    }
+
+    /**
      * Execute an HTTP request with rate limit retry handling.
      *
      * @param  array<string, mixed>  $data

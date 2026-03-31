@@ -4,12 +4,15 @@ namespace App\Services\Sync;
 
 use App\Models\KlaviyoProfile;
 use App\Services\Api\KlaviyoClient;
+use App\Services\Sync\Concerns\HasTimeBudget;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class KlaviyoProfileSyncer
 {
+    use HasTimeBudget;
+
     protected int $syncedCount = 0;
 
     public function __construct(
@@ -18,13 +21,20 @@ class KlaviyoProfileSyncer
 
     /**
      * Sync profiles from Klaviyo, including predictive analytics.
-     * When $since is provided, only profiles updated after that timestamp are fetched.
+     * Supports cursor-based resumption for time-budgeted execution.
+     *
+     * @param  array<string, mixed>|null  $cursor  Resume state from a previous incomplete run.
+     * @return array{count: int, cursor: ?array<string, mixed>, complete: bool}
      */
-    public function sync(?CarbonImmutable $since = null): int
+    public function sync(?CarbonImmutable $since = null, ?array $cursor = null): array
     {
         $this->syncedCount = 0;
+        $this->startTimeBudget();
 
-        Log::info('Klaviyo profile sync starting', ['incremental' => $since !== null]);
+        Log::info('Klaviyo profile sync starting', [
+            'incremental' => $since !== null,
+            'resuming' => $cursor !== null,
+        ]);
 
         $query = [
             'additional-fields[profile]' => 'predictive_analytics',
@@ -35,26 +45,36 @@ class KlaviyoProfileSyncer
             $query['filter'] = "greater-than(updated,{$since->subMinutes(5)->toIso8601String()})";
         }
 
-        $profiles = $this->klaviyo->paginate('profiles', $query);
+        $startUrl = $cursor['next_url'] ?? null;
 
-        $batch = [];
+        foreach ($this->klaviyo->paginatePages('profiles', $query, $startUrl) as $page) {
+            $this->upsertBatch($page['items']);
 
-        foreach ($profiles as $profile) {
-            $batch[] = $profile;
+            if (! $this->hasTimeRemaining() && $page['next_url']) {
+                Log::info('Klaviyo profile sync paused (time budget)', [
+                    'synced_this_run' => $this->syncedCount,
+                    'elapsed' => $this->elapsedSeconds(),
+                ]);
 
-            if (count($batch) >= 50) {
-                $this->upsertBatch($batch);
-                $batch = [];
+                return [
+                    'count' => $this->syncedCount,
+                    'cursor' => [
+                        'next_url' => $page['next_url'],
+                        'since' => $since?->toIso8601String(),
+                        'was_full' => $since === null,
+                    ],
+                    'complete' => false,
+                ];
             }
-        }
-
-        if (count($batch) > 0) {
-            $this->upsertBatch($batch);
         }
 
         Log::info('Klaviyo profile sync completed', ['synced' => $this->syncedCount]);
 
-        return $this->syncedCount;
+        return [
+            'count' => $this->syncedCount,
+            'cursor' => null,
+            'complete' => true,
+        ];
     }
 
     /**
@@ -64,6 +84,10 @@ class KlaviyoProfileSyncer
      */
     protected function upsertBatch(array $batch): void
     {
+        if (empty($batch)) {
+            return;
+        }
+
         $rows = array_map(fn (array $profile) => $this->mapProfile($profile), $batch);
 
         DB::transaction(function () use ($rows) {

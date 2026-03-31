@@ -91,7 +91,7 @@ it('syncs engagement counts using bulk metric approach', function () {
     ]);
 
     $syncer = app(KlaviyoEngagementSyncer::class);
-    $count = $syncer->sync();
+    $syncer->sync();
 
     $profile->refresh();
 

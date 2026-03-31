@@ -5,12 +5,15 @@ namespace App\Services\Sync;
 use App\Models\KlaviyoProfile;
 use App\Models\ShopifyCustomer;
 use App\Services\Api\KlaviyoClient;
+use App\Services\Sync\Concerns\HasTimeBudget;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class KlaviyoEngagementSyncer
 {
+    use HasTimeBudget;
+
     /** Event types we track, mapped to their database column and Klaviyo metric ID */
     protected const array TRACKED_EVENTS = [
         'Received Email' => 'emails_received',
@@ -29,65 +32,112 @@ class KlaviyoEngagementSyncer
     ) {}
 
     /**
-     * Sync engagement and intent event counts from Klaviyo using bulk metric fetching.
-     * When $since is provided, only events after that timestamp are fetched and counts
-     * are added to existing values (incremental). When null, the full 6-month window
-     * is used and counts are replaced (full sync).
+     * Sync engagement event counts from Klaviyo.
+     * Supports cursor-based resumption for time-budgeted execution.
+     *
+     * @param  array<string, mixed>|null  $cursor  Resume state from a previous incomplete run.
+     * @return array{count: int, cursor: ?array<string, mixed>, complete: bool}
      */
-    public function sync(?CarbonImmutable $since = null): int
+    public function sync(?CarbonImmutable $since = null, ?array $cursor = null): array
     {
-        $this->isIncremental = $since !== null;
+        $this->startTimeBudget();
+
+        // When resuming from cursor, always use incremental semantics to safely add counts
+        $this->isIncremental = $since !== null || $cursor !== null;
         $eventsSince = $since?->subMinutes(5) ?? CarbonImmutable::now()->subMonths(6);
 
         Log::info('Klaviyo engagement sync starting', [
             'mode' => $this->isIncremental ? 'incremental' : 'full',
             'since' => $eventsSince->toDateTimeString(),
+            'resuming' => $cursor !== null,
         ]);
 
-        $metricIds = $this->resolveMetricIds();
+        $metricIds = $cursor['metric_ids'] ?? $this->resolveMetricIds();
 
         if (empty($metricIds)) {
             Log::warning('Could not resolve any metric IDs — skipping engagement sync');
 
-            return 0;
+            return ['count' => 0, 'cursor' => null, 'complete' => true];
         }
 
-        // Build a set of follower klaviyo_ids to filter against
         $followerKlaviyoIds = $this->getFollowerKlaviyoIds();
 
         Log::info('Engagement sync targeting followers', ['count' => count($followerKlaviyoIds)]);
 
-        // Aggregate counts per profile across all tracked metrics
+        $completedMetrics = $cursor['completed_metrics'] ?? [];
+
         /** @var array<string, array<string, int>> $profileCounts [klaviyo_id => [column => count]] */
         $profileCounts = [];
+        $paused = false;
 
         foreach ($metricIds as $metricName => $metricId) {
+            if (in_array($metricName, $completedMetrics)) {
+                continue;
+            }
+
             $column = self::TRACKED_EVENTS[$metricName];
             $eventCount = 0;
+            $startUrl = ($cursor['current_metric'] ?? null) === $metricName
+                ? ($cursor['next_url'] ?? null)
+                : null;
 
-            $this->paginateEvents($metricId, $eventsSince, function (array $event) use ($followerKlaviyoIds, $column, &$profileCounts, &$eventCount) {
-                $profileId = $event['relationships']['profile']['data']['id'] ?? null;
+            $nextUrl = $this->paginateEventsWithBudget(
+                $metricId, $eventsSince, $startUrl,
+                function (array $event) use ($followerKlaviyoIds, $column, &$profileCounts, &$eventCount) {
+                    $profileId = $event['relationships']['profile']['data']['id'] ?? null;
 
-                if (! $profileId || ! isset($followerKlaviyoIds[$profileId])) {
-                    return;
-                }
+                    if (! $profileId || ! isset($followerKlaviyoIds[$profileId])) {
+                        return;
+                    }
 
-                $profileCounts[$profileId][$column] = ($profileCounts[$profileId][$column] ?? 0) + 1;
-                $eventCount++;
-            });
+                    $profileCounts[$profileId][$column] = ($profileCounts[$profileId][$column] ?? 0) + 1;
+                    $eventCount++;
+                },
+            );
 
             Log::info("Engagement metric fetched: {$metricName}", ['events' => $eventCount]);
+
+            if ($nextUrl !== null) {
+                // Time budget exceeded mid-metric — flush what we have and return cursor
+                $this->updateProfiles($profileCounts);
+
+                Log::info('Klaviyo engagement sync paused (time budget)', [
+                    'completed_metrics' => $completedMetrics,
+                    'current_metric' => $metricName,
+                ]);
+
+                $paused = true;
+
+                return [
+                    'count' => count($profileCounts),
+                    'cursor' => [
+                        'metric_ids' => $metricIds,
+                        'completed_metrics' => $completedMetrics,
+                        'current_metric' => $metricName,
+                        'next_url' => $nextUrl,
+                        'since' => $eventsSince->toIso8601String(),
+                        'was_full' => $since === null && $cursor === null,
+                    ],
+                    'complete' => false,
+                ];
+            }
+
+            $completedMetrics[] = $metricName;
         }
 
-        // Batch update profiles
         $updatedCount = $this->updateProfiles($profileCounts);
+
+        // In full mode (no cursor resume): mark remaining follower profiles as synced
+        if (! $this->isIncremental) {
+            $updatedCount += $this->markUnsyncedFollowers();
+        }
 
         Log::info('Klaviyo engagement sync completed', [
             'mode' => $this->isIncremental ? 'incremental' : 'full',
             'profiles_updated' => $updatedCount,
         ]);
 
-        return $updatedCount;
+        return ['count' => $updatedCount, 'cursor' => null, 'complete' => true];
     }
 
     /**
@@ -154,13 +204,19 @@ class KlaviyoEngagementSyncer
     }
 
     /**
-     * Paginate through all events for a metric within a time window,
-     * calling $callback for each event.
+     * Paginate through events for a metric, calling $callback for each event.
+     * Stops when the time budget runs out and returns the next URL as cursor.
+     *
+     * @return string|null The next URL if paused, null if completed.
      */
-    protected function paginateEvents(string $metricId, CarbonImmutable $since, callable $callback): void
-    {
+    protected function paginateEventsWithBudget(
+        string $metricId,
+        CarbonImmutable $since,
+        ?string $startUrl,
+        callable $callback,
+    ): ?string {
         $sinceStr = $since->toIso8601String();
-        $endpoint = 'events';
+
         $query = [
             'filter' => "equals(metric_id,\"{$metricId}\"),greater-or-equal(datetime,{$sinceStr})",
             'fields[event]' => 'datetime',
@@ -169,24 +225,20 @@ class KlaviyoEngagementSyncer
         ];
 
         try {
-            do {
-                $response = $this->klaviyo->get($endpoint, $query);
-
-                foreach ($response['data'] ?? [] as $event) {
+            foreach ($this->klaviyo->paginatePages('events', $query, $startUrl) as $page) {
+                foreach ($page['items'] as $event) {
                     $callback($event);
                 }
 
-                $nextUrl = $response['links']['next'] ?? null;
-
-                if ($nextUrl) {
-                    $parsed = parse_url($nextUrl);
-                    $endpoint = ltrim(str_replace('/api/', '', $parsed['path'] ?? ''), '/');
-                    parse_str($parsed['query'] ?? '', $query);
+                if (! $this->hasTimeRemaining() && $page['next_url']) {
+                    return $page['next_url'];
                 }
-            } while ($nextUrl);
+            }
         } catch (\Throwable $e) {
             Log::warning("Failed to fetch events for metric {$metricId}", ['error' => $e->getMessage()]);
         }
+
+        return null;
     }
 
     /**
@@ -234,23 +286,24 @@ class KlaviyoEngagementSyncer
             });
         }
 
-        // In full mode: mark remaining follower profiles (with no events) as synced
-        if (! $this->isIncremental) {
-            $customerEmails = ShopifyCustomer::query()
-                ->whereNotNull('email')
-                ->pluck('email')
-                ->map(fn (string $email) => strtolower($email));
-
-            $zeroUpdated = KlaviyoProfile::query()
-                ->whereNull('engagement_synced_at')
-                ->whereNotNull('email')
-                ->where('email', '!=', '')
-                ->whereNotIn(DB::raw('LOWER(email)'), $customerEmails)
-                ->update(['engagement_synced_at' => now()]);
-
-            $updatedCount += $zeroUpdated;
-        }
-
         return $updatedCount;
+    }
+
+    /**
+     * In full mode: mark remaining follower profiles (with no events) as synced.
+     */
+    protected function markUnsyncedFollowers(): int
+    {
+        $customerEmails = ShopifyCustomer::query()
+            ->whereNotNull('email')
+            ->pluck('email')
+            ->map(fn (string $email) => strtolower($email));
+
+        return KlaviyoProfile::query()
+            ->whereNull('engagement_synced_at')
+            ->whereNotNull('email')
+            ->where('email', '!=', '')
+            ->whereNotIn(DB::raw('LOWER(email)'), $customerEmails)
+            ->update(['engagement_synced_at' => now()]);
     }
 }

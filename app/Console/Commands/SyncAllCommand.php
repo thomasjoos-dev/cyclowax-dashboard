@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\SyncState;
 use App\Services\Analysis\DashboardService;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -18,6 +19,13 @@ class SyncAllCommand extends Command
         'klaviyo:sync-campaigns',
         'klaviyo:sync-engagement',
         'orders:compute-margins',
+    ];
+
+    /** Steps that manage their own SyncState via cursor protocol */
+    private const CURSOR_AWARE_COMMANDS = [
+        'klaviyo:sync-profiles',
+        'klaviyo:sync-campaigns',
+        'klaviyo:sync-engagement',
     ];
 
     public function handle(): int
@@ -44,23 +52,51 @@ class SyncAllCommand extends Command
         ];
 
         $failures = 0;
+        $needsMoreRuns = false;
 
         foreach ($steps as [$command, $label]) {
+            // Skip steps that completed during this pipeline cycle
+            if ($this->isRecentlyCompleted($command, $pipelineStart)) {
+                $this->components->info("[{$label}] Already completed this cycle, skipping.");
+
+                continue;
+            }
+
             $this->runStep($command, $label, $isFull, $failures);
+
+            // For cursor-aware commands: check if the step needs more runs
+            if (in_array($command, self::CURSOR_AWARE_COMMANDS) && SyncState::isIncomplete($command)) {
+                $needsMoreRuns = true;
+                $this->components->warn("Pipeline paused: {$label} needs more runs. Scheduler will resume.");
+                break;
+            }
+
+            if ($failures > 0) {
+                break;
+            }
         }
 
-        app(DashboardService::class)->flushCache();
-        $this->components->info('Dashboard cache flushed.');
+        if (! $needsMoreRuns) {
+            app(DashboardService::class)->flushCache();
+            $this->components->info('Dashboard cache flushed.');
+        }
 
         $duration = round(microtime(true) - $pipelineStart, 1);
 
         $this->newLine();
 
         if ($failures > 0) {
-            $this->components->warn("Pipeline completed with {$failures} failure(s) in {$duration}s.");
-            Log::warning('Sync pipeline completed with failures', ['failures' => $failures, 'duration' => $duration]);
+            $this->components->warn("Pipeline stopped with {$failures} failure(s) in {$duration}s.");
+            Log::warning('Sync pipeline stopped with failures', ['failures' => $failures, 'duration' => $duration]);
 
             return self::FAILURE;
+        }
+
+        if ($needsMoreRuns) {
+            $this->components->info("Pipeline paused after {$duration}s. Will resume on next scheduler run.");
+            Log::info('Sync pipeline paused for continuation', ['duration' => $duration]);
+
+            return self::SUCCESS;
         }
 
         $this->components->info("Pipeline completed successfully in {$duration}s.");
@@ -90,14 +126,10 @@ class SyncAllCommand extends Command
                 Log::error("Sync step failed: {$label}", ['command' => $command, 'exit_code' => $exitCode]);
                 $failures++;
             } else {
-                SyncState::updateOrCreate(
-                    ['step' => $command],
-                    [
-                        'last_synced_at' => now(),
-                        'duration_seconds' => $duration,
-                        'was_full_sync' => $isFull,
-                    ],
-                );
+                // Cursor-aware commands manage their own SyncState — skip for those
+                if (! in_array($command, self::CURSOR_AWARE_COMMANDS)) {
+                    SyncState::markCompleted($command, $duration, 0, $isFull);
+                }
 
                 $this->components->info("{$label} completed in {$duration}s.");
             }
@@ -107,5 +139,21 @@ class SyncAllCommand extends Command
             Log::error("Sync step exception: {$label}", ['command' => $command, 'error' => $e->getMessage()]);
             $failures++;
         }
+    }
+
+    /**
+     * Check if a step completed recently (during this pipeline cycle).
+     */
+    protected function isRecentlyCompleted(string $step, float $pipelineStart): bool
+    {
+        $state = SyncState::where('step', $step)->first();
+
+        if (! $state || $state->status !== 'completed' || ! $state->last_synced_at) {
+            return false;
+        }
+
+        $pipelineStartTime = CarbonImmutable::createFromTimestamp($pipelineStart);
+
+        return $state->last_synced_at->greaterThanOrEqualTo($pipelineStartTime);
     }
 }

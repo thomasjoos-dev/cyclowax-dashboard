@@ -4,39 +4,57 @@ namespace App\Services\Sync;
 
 use App\Models\KlaviyoCampaign;
 use App\Services\Api\KlaviyoClient;
+use App\Services\Sync\Concerns\HasTimeBudget;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class KlaviyoCampaignSyncer
 {
+    use HasTimeBudget;
+
     protected int $syncedCount = 0;
 
     protected ?string $placedOrderMetricId = null;
+
+    protected ?CarbonImmutable $since = null;
 
     public function __construct(
         protected KlaviyoClient $klaviyo,
     ) {}
 
-    protected ?CarbonImmutable $since = null;
-
     /**
      * Sync email campaigns from Klaviyo, then enrich sent campaigns with metrics.
-     * When $since is provided, only campaigns updated after that timestamp are fetched.
+     * Supports time-budgeted execution: enrichment stops when time runs out.
+     *
+     * @return array{count: int, complete: bool}
      */
-    public function sync(?CarbonImmutable $since = null): int
+    public function sync(?CarbonImmutable $since = null): array
     {
         $this->syncedCount = 0;
         $this->since = $since;
+        $this->startTimeBudget();
 
         Log::info('Klaviyo campaign sync starting', ['incremental' => $since !== null]);
 
         $this->syncCampaigns();
-        $this->enrichSentCampaignsWithMetrics();
 
-        Log::info('Klaviyo campaign sync completed', ['synced' => $this->syncedCount]);
+        $enrichmentComplete = true;
 
-        return $this->syncedCount;
+        if ($this->hasTimeRemaining()) {
+            $enrichmentComplete = $this->enrichSentCampaignsWithMetrics();
+        } else {
+            $enrichmentComplete = false;
+        }
+
+        Log::info('Klaviyo campaign sync '.($enrichmentComplete ? 'completed' : 'paused'), [
+            'synced' => $this->syncedCount,
+        ]);
+
+        return [
+            'count' => $this->syncedCount,
+            'complete' => $enrichmentComplete,
+        ];
     }
 
     /**
@@ -71,10 +89,11 @@ class KlaviyoCampaignSyncer
     }
 
     /**
-     * Fetch performance metrics for all sent campaigns via the Reporting API.
-     * The reporting endpoint has strict rate limits (1/s, 2/min) so we process one at a time.
+     * Fetch performance metrics for sent campaigns via the Reporting API.
+     * Stops when the time budget runs out. Campaigns with recipients > 0
+     * are already enriched, so the next run naturally continues with the rest.
      */
-    protected function enrichSentCampaignsWithMetrics(): void
+    protected function enrichSentCampaignsWithMetrics(): bool
     {
         $sentCampaigns = KlaviyoCampaign::query()
             ->whereRaw('LOWER(status) = ?', ['sent'])
@@ -82,7 +101,7 @@ class KlaviyoCampaignSyncer
             ->get();
 
         if ($sentCampaigns->isEmpty()) {
-            return;
+            return true;
         }
 
         $this->placedOrderMetricId = $this->resolvePlacedOrderMetricId();
@@ -90,7 +109,7 @@ class KlaviyoCampaignSyncer
         if (! $this->placedOrderMetricId) {
             Log::warning('Could not find Placed Order metric ID — skipping campaign metrics enrichment');
 
-            return;
+            return true;
         }
 
         Log::info('Enriching sent campaigns with metrics', [
@@ -99,11 +118,20 @@ class KlaviyoCampaignSyncer
         ]);
 
         foreach ($sentCampaigns as $campaign) {
+            if (! $this->hasTimeRemaining()) {
+                $remaining = $sentCampaigns->where('recipients', 0)->count();
+                Log::info('Campaign enrichment paused (time budget)', ['remaining' => $remaining]);
+
+                return false;
+            }
+
             $this->fetchAndStoreMetrics($campaign);
 
             // Reporting API rate limit: 2 requests/min steady state
             sleep(31);
         }
+
+        return true;
     }
 
     /**

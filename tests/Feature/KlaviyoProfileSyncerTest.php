@@ -67,9 +67,11 @@ it('syncs profiles from Klaviyo API', function () {
     ]);
 
     $syncer = app(KlaviyoProfileSyncer::class);
-    $count = $syncer->sync();
+    $result = $syncer->sync();
 
-    expect($count)->toBe(2)
+    expect($result['count'])->toBe(2)
+        ->and($result['complete'])->toBeTrue()
+        ->and($result['cursor'])->toBeNull()
         ->and(KlaviyoProfile::count())->toBe(2);
 
     $jan = KlaviyoProfile::query()->where('klaviyo_id', 'profile_001')->first();
@@ -80,7 +82,7 @@ it('syncs profiles from Klaviyo API', function () {
         ->and($jan->city)->toBe('Amsterdam')
         ->and($jan->historic_clv)->toBe('125.50')
         ->and($jan->total_clv)->toBe('205.50')
-        ->and($jan->historic_number_of_orders)->toBe(3)
+        ->and($jan->historic_number_of_orders)->toBe('3.00')
         ->and($jan->churn_probability)->toBe('0.2345');
 });
 

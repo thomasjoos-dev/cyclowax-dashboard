@@ -88,9 +88,9 @@ it('syncs campaigns from Klaviyo API', function () {
     ]);
 
     $syncer = app(KlaviyoCampaignSyncer::class);
-    $count = $syncer->sync();
+    $result = $syncer->sync();
 
-    expect($count)->toBe(2)
+    expect($result['count'])->toBe(2)
         ->and(KlaviyoCampaign::count())->toBe(2);
 
     $campaign = KlaviyoCampaign::query()->where('klaviyo_id', 'campaign_001')->first();
@@ -167,8 +167,8 @@ it('handles metrics API failure gracefully without crashing sync', function () {
     ]);
 
     $syncer = app(KlaviyoCampaignSyncer::class);
-    $count = $syncer->sync();
+    $result = $syncer->sync();
 
-    expect($count)->toBe(1)
+    expect($result['count'])->toBe(1)
         ->and(KlaviyoCampaign::first()->recipients)->toBe(0);
 });
