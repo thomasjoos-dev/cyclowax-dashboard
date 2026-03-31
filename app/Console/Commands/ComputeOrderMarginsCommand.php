@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Services\ChannelClassificationService;
-use App\Services\LineItemLinker;
-use App\Services\OrderMarginCalculator;
+use App\Services\Scoring\ChannelClassificationService;
+use App\Services\Scoring\OrderMarginCalculator;
+use App\Services\Sync\LineItemLinker;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

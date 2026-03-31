@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Services\AnalysisPdfService;
-use App\Services\DtcSalesQueryService;
+use App\Services\Analysis\DtcSalesQueryService;
+use App\Services\Support\AnalysisPdfService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

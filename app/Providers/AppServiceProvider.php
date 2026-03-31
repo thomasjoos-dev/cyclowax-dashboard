@@ -2,9 +2,9 @@
 
 namespace App\Providers;
 
-use App\Services\KlaviyoClient;
-use App\Services\OdooClient;
-use App\Services\ShopifyClient;
+use App\Services\Api\KlaviyoClient;
+use App\Services\Api\OdooClient;
+use App\Services\Api\ShopifyClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;

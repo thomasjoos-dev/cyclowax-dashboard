@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\ShopifyOrderSyncer;
+use App\Services\Sync\ShopifyOrderSyncer;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;

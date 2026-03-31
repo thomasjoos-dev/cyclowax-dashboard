@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\AdSpendImporter;
+use App\Services\Sync\AdSpendImporter;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

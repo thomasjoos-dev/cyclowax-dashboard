@@ -3,9 +3,9 @@
 namespace App\Console\Commands;
 
 use App\Models\Scenario;
-use App\Services\AnalysisPdfService;
-use App\Services\ForecastService;
-use App\Services\ScenarioService;
+use App\Services\Forecast\ForecastService;
+use App\Services\Forecast\ScenarioService;
+use App\Services\Support\AnalysisPdfService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

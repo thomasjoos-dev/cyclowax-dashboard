@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\ShopifySegmentSyncer;
+use App\Services\Sync\ShopifySegmentSyncer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

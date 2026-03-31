@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\SyncState;
-use App\Services\KlaviyoProfileSyncer;
+use App\Services\Sync\KlaviyoProfileSyncer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

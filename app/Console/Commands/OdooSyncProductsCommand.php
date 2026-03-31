@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\OdooProductSyncer;
+use App\Services\Sync\OdooProductSyncer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

@@ -5,7 +5,7 @@ namespace App\Console\Commands;
 use App\Enums\PortfolioRole;
 use App\Enums\ProductCategory;
 use App\Models\Product;
-use App\Services\ProductClassifier;
+use App\Services\Scoring\ProductClassifier;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

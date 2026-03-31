@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\DashboardApiRequest;
-use App\Services\DashboardService;
+use App\Services\Analysis\DashboardService;
 use Illuminate\Http\JsonResponse;
 
 class DashboardApiController extends Controller

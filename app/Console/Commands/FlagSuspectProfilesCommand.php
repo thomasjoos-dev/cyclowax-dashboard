@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\SuspectProfileFlagger;
+use App\Services\Scoring\SuspectProfileFlagger;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

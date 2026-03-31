@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Enums\LifecycleStage;
 use App\Models\RiderProfile;
-use App\Services\FollowerScorer;
+use App\Services\Scoring\FollowerScorer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

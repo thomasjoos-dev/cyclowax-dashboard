@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\ShopifyClient;
+use App\Services\Api\ShopifyClient;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\SeasonalIndexCalculator;
+use App\Services\Forecast\SeasonalIndexCalculator;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

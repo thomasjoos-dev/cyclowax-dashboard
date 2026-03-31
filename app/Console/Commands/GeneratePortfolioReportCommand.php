@@ -3,11 +3,11 @@
 namespace App\Console\Commands;
 
 use App\Enums\ProductCategory;
-use App\Services\AnalysisPdfService;
-use App\Services\ProductPathwayService;
-use App\Services\ProductPortfolioService;
-use App\Services\PurchaseLadderService;
-use App\Services\RepeatProbabilityService;
+use App\Services\Analysis\ProductPathwayService;
+use App\Services\Analysis\ProductPortfolioService;
+use App\Services\Analysis\PurchaseLadderService;
+use App\Services\Analysis\RepeatProbabilityService;
+use App\Services\Support\AnalysisPdfService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
