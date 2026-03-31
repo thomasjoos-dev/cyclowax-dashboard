@@ -34,6 +34,7 @@ class KlaviyoCampaignSyncer
         $this->syncedCount = 0;
         $this->since = $since;
         $this->startTimeBudget();
+        DB::connection()->disableQueryLog();
 
         Log::info('Klaviyo campaign sync starting', ['incremental' => $since !== null]);
 

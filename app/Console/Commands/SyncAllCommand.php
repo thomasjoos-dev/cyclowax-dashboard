@@ -8,7 +8,9 @@ use Carbon\CarbonImmutable;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Process;
 
 #[Signature('sync:all {--full : Force full sync for all steps, bypassing incremental logic}')]
 #[Description('Run the full daily sync pipeline: Shopify → Odoo → Klaviyo → margins → RFM → profiles')]
@@ -105,6 +107,10 @@ class SyncAllCommand extends Command
         return self::SUCCESS;
     }
 
+    /**
+     * Run a pipeline step as an isolated PHP process to prevent memory accumulation.
+     * Each sub-process gets its own memory space that is fully released by the OS on exit.
+     */
     protected function runStep(string $command, string $label, bool $isFull, int &$failures): void
     {
         $this->newLine();
@@ -112,33 +118,46 @@ class SyncAllCommand extends Command
 
         $start = microtime(true);
 
-        try {
-            $arguments = [];
-            if ($isFull && in_array($command, self::FULL_SYNC_COMMANDS)) {
-                $arguments['--full'] = true;
-            }
-
-            $exitCode = $this->call($command, $arguments);
-            $duration = round(microtime(true) - $start, 1);
-
-            if ($exitCode !== self::SUCCESS) {
-                $this->components->error("{$label} failed (exit code {$exitCode}) after {$duration}s.");
-                Log::error("Sync step failed: {$label}", ['command' => $command, 'exit_code' => $exitCode]);
-                $failures++;
-            } else {
-                // Cursor-aware commands manage their own SyncState — skip for those
-                if (! in_array($command, self::CURSOR_AWARE_COMMANDS)) {
-                    SyncState::markCompleted($command, $duration, 0, $isFull);
-                }
-
-                $this->components->info("{$label} completed in {$duration}s.");
-            }
-        } catch (\Throwable $e) {
-            $duration = round(microtime(true) - $start, 1);
-            $this->components->error("{$label} threw exception after {$duration}s: {$e->getMessage()}");
-            Log::error("Sync step exception: {$label}", ['command' => $command, 'error' => $e->getMessage()]);
-            $failures++;
+        $artisanCommand = 'php artisan '.$command;
+        if ($isFull && in_array($command, self::FULL_SYNC_COMMANDS)) {
+            $artisanCommand .= ' --full';
         }
+
+        $result = Process::timeout(600)->run($artisanCommand);
+        $duration = round(microtime(true) - $start, 1);
+
+        // Forward sub-process output so the pipeline log stays complete
+        $output = trim($result->output());
+        if ($output !== '') {
+            $this->line($output);
+        }
+
+        if (! $result->successful()) {
+            $this->components->error("{$label} failed (exit code {$result->exitCode()}) after {$duration}s.");
+
+            $errorOutput = trim($result->errorOutput());
+            if ($errorOutput !== '') {
+                $this->line($errorOutput);
+            }
+
+            Log::error("Sync step failed: {$label}", [
+                'command' => $command,
+                'exit_code' => $result->exitCode(),
+                'error' => $errorOutput,
+            ]);
+            $failures++;
+        } else {
+            // Cursor-aware commands manage their own SyncState — skip for those
+            if (! in_array($command, self::CURSOR_AWARE_COMMANDS)) {
+                SyncState::markCompleted($command, $duration, 0, $isFull);
+            }
+
+            $this->components->info("{$label} completed in {$duration}s.");
+        }
+
+        // Clean up parent process memory between steps
+        DB::connection()->flushQueryLog();
+        gc_collect_cycles();
     }
 
     /**

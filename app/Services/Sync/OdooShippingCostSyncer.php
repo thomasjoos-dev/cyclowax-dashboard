@@ -4,6 +4,7 @@ namespace App\Services\Sync;
 
 use App\Models\ShopifyOrder;
 use App\Services\Api\OdooClient;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class OdooShippingCostSyncer
@@ -25,6 +26,7 @@ class OdooShippingCostSyncer
     {
         $this->exactCount = 0;
         $this->carrierCount = 0;
+        DB::connection()->disableQueryLog();
 
         Log::info('Odoo shipping cost sync starting');
 

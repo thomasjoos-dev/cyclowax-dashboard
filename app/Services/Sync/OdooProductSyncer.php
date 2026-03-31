@@ -28,6 +28,7 @@ class OdooProductSyncer
     {
         $this->syncedCount = 0;
         $this->snapshotCount = 0;
+        DB::connection()->disableQueryLog();
 
         $now = CarbonImmutable::now();
 

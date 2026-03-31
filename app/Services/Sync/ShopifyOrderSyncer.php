@@ -27,6 +27,7 @@ class ShopifyOrderSyncer
     public function sync(CarbonImmutable $from, CarbonImmutable $to): int
     {
         $this->syncedCount = 0;
+        DB::connection()->disableQueryLog();
 
         $count = $this->countOrders($from, $to);
 

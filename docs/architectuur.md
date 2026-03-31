@@ -222,10 +222,15 @@ Alle API list-endpoints gebruiken FormRequests (`App\Http\Requests\Api\V1\*`):
 
 ### Sync pipeline (dagelijks 06:00 via `sync:all`)
 
-**Resumable sync architectuur:** Elke sync-stap heeft een time budget van 3,5 minuten
-(via `HasTimeBudget` trait). Stappen die niet binnen het budget passen slaan een cursor
-op in `sync_states` en hervatten bij de volgende run. `SyncAllCommand` skipt afgeronde
-stappen en stopt bij de eerste incomplete stap. Alle writes zijn idempotent (upsert).
+**Process-geïsoleerde pipeline:** Elke sync-stap draait als apart PHP-proces via
+`Process::run()`. Hierdoor wordt geheugen na elke stap volledig vrijgegeven door het OS,
+wat de pipeline geschikt maakt voor geheugen-gelimiteerde omgevingen (staging: 1 GB).
+
+**Resumable sync architectuur:** Elke sync-stap heeft een time- én memory budget
+(via `HasTimeBudget` trait: 3,5 min / 80% memory_limit). Stappen die niet binnen het
+budget passen slaan een cursor op in `sync_states` en hervatten bij de volgende run.
+`SyncAllCommand` skipt afgeronde stappen en stopt bij de eerste incomplete stap.
+Alle writes zijn idempotent (upsert). Query logging is uitgeschakeld in alle syncers.
 
 0. **Klaviyo profiles** (`klaviyo:sync-profiles`)
    - Cursor-based pagination door alle profielen (page size 50)

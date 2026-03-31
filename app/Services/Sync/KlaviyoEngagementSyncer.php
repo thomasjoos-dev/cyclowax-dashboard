@@ -3,7 +3,6 @@
 namespace App\Services\Sync;
 
 use App\Models\KlaviyoProfile;
-use App\Models\ShopifyCustomer;
 use App\Services\Api\KlaviyoClient;
 use App\Services\Sync\Concerns\HasTimeBudget;
 use Carbon\CarbonImmutable;
@@ -41,6 +40,7 @@ class KlaviyoEngagementSyncer
     public function sync(?CarbonImmutable $since = null, ?array $cursor = null): array
     {
         $this->startTimeBudget();
+        DB::connection()->disableQueryLog();
 
         // When resuming from cursor, always use incremental semantics to safely add counts
         $this->isIncremental = $since !== null || $cursor !== null;
@@ -65,16 +65,15 @@ class KlaviyoEngagementSyncer
         Log::info('Engagement sync targeting followers', ['count' => count($followerKlaviyoIds)]);
 
         $completedMetrics = $cursor['completed_metrics'] ?? [];
-
-        /** @var array<string, array<string, int>> $profileCounts [klaviyo_id => [column => count]] */
-        $profileCounts = [];
-        $paused = false;
+        $totalUpdated = 0;
 
         foreach ($metricIds as $metricName => $metricId) {
             if (in_array($metricName, $completedMetrics)) {
                 continue;
             }
 
+            /** @var array<string, array<string, int>> $profileCounts [klaviyo_id => [column => count]] */
+            $profileCounts = [];
             $column = self::TRACKED_EVENTS[$metricName];
             $eventCount = 0;
             $startUrl = ($cursor['current_metric'] ?? null) === $metricName
@@ -97,19 +96,19 @@ class KlaviyoEngagementSyncer
 
             Log::info("Engagement metric fetched: {$metricName}", ['events' => $eventCount]);
 
-            if ($nextUrl !== null) {
-                // Time budget exceeded mid-metric — flush what we have and return cursor
-                $this->updateProfiles($profileCounts);
+            // Flush counts to DB after each metric to keep memory bounded
+            $totalUpdated += $this->updateProfiles($profileCounts);
+            unset($profileCounts);
+            gc_collect_cycles();
 
+            if ($nextUrl !== null) {
                 Log::info('Klaviyo engagement sync paused (time budget)', [
                     'completed_metrics' => $completedMetrics,
                     'current_metric' => $metricName,
                 ]);
 
-                $paused = true;
-
                 return [
-                    'count' => count($profileCounts),
+                    'count' => $totalUpdated,
                     'cursor' => [
                         'metric_ids' => $metricIds,
                         'completed_metrics' => $completedMetrics,
@@ -125,7 +124,7 @@ class KlaviyoEngagementSyncer
             $completedMetrics[] = $metricName;
         }
 
-        $updatedCount = $this->updateProfiles($profileCounts);
+        $updatedCount = $totalUpdated;
 
         // In full mode (no cursor resume): mark remaining follower profiles as synced
         if (! $this->isIncremental) {
@@ -172,18 +171,12 @@ class KlaviyoEngagementSyncer
 
     /**
      * Get a lookup set of klaviyo_ids for follower profiles (not Shopify customers).
+     * Uses a DB subquery instead of loading all customer emails into PHP memory.
      *
      * @return array<string, true>
      */
     protected function getFollowerKlaviyoIds(): array
     {
-        $customerEmails = ShopifyCustomer::query()
-            ->whereNotNull('email')
-            ->pluck('email')
-            ->map(fn (string $email) => strtolower($email))
-            ->flip()
-            ->all();
-
         $followerIds = [];
 
         KlaviyoProfile::query()
@@ -191,12 +184,16 @@ class KlaviyoEngagementSyncer
             ->where('email', '!=', '')
             ->where('is_suspect', false)
             ->whereNotNull('klaviyo_id')
-            ->select(['id', 'klaviyo_id', 'email'])
-            ->chunkById(1000, function ($profiles) use ($customerEmails, &$followerIds) {
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('shopify_customers')
+                    ->whereNotNull('shopify_customers.email')
+                    ->whereColumn(DB::raw('LOWER(shopify_customers.email)'), DB::raw('LOWER(klaviyo_profiles.email)'));
+            })
+            ->select(['id', 'klaviyo_id'])
+            ->chunkById(1000, function ($profiles) use (&$followerIds) {
                 foreach ($profiles as $profile) {
-                    if (! isset($customerEmails[strtolower($profile->email)])) {
-                        $followerIds[$profile->klaviyo_id] = true;
-                    }
+                    $followerIds[$profile->klaviyo_id] = true;
                 }
             });
 
@@ -247,9 +244,19 @@ class KlaviyoEngagementSyncer
      *
      * @param  array<string, array<string, int>>  $profileCounts
      */
+    /**
+     * Batch update KlaviyoProfile records with aggregated event counts.
+     * Only touches columns present in $profileCounts so per-metric flushes
+     * don't overwrite previously written columns.
+     *
+     * @param  array<string, array<string, int>>  $profileCounts
+     */
     protected function updateProfiles(array $profileCounts): int
     {
-        $columns = array_values(self::TRACKED_EVENTS);
+        if (empty($profileCounts)) {
+            return 0;
+        }
+
         $updatedCount = 0;
 
         foreach (array_chunk($profileCounts, 500, preserve_keys: true) as $chunk) {
@@ -260,7 +267,7 @@ class KlaviyoEngagementSyncer
                 ->get(['id', 'klaviyo_id'])
                 ->keyBy('klaviyo_id');
 
-            DB::transaction(function () use ($chunk, $profiles, $columns, &$updatedCount) {
+            DB::transaction(function () use ($chunk, $profiles, &$updatedCount) {
                 foreach ($chunk as $klaviyoId => $counts) {
                     $profile = $profiles[$klaviyoId] ?? null;
 
@@ -270,13 +277,11 @@ class KlaviyoEngagementSyncer
 
                     $updateData = ['engagement_synced_at' => now()];
 
-                    foreach ($columns as $column) {
-                        $increment = $counts[$column] ?? 0;
-
-                        if ($this->isIncremental && $increment > 0) {
-                            $updateData[$column] = DB::raw("{$column} + {$increment}");
+                    foreach ($counts as $column => $value) {
+                        if ($this->isIncremental && $value > 0) {
+                            $updateData[$column] = DB::raw("{$column} + {$value}");
                         } elseif (! $this->isIncremental) {
-                            $updateData[$column] = $increment;
+                            $updateData[$column] = $value;
                         }
                     }
 
@@ -291,19 +296,20 @@ class KlaviyoEngagementSyncer
 
     /**
      * In full mode: mark remaining follower profiles (with no events) as synced.
+     * Uses a DB subquery to avoid loading all customer emails into PHP memory.
      */
     protected function markUnsyncedFollowers(): int
     {
-        $customerEmails = ShopifyCustomer::query()
-            ->whereNotNull('email')
-            ->pluck('email')
-            ->map(fn (string $email) => strtolower($email));
-
         return KlaviyoProfile::query()
             ->whereNull('engagement_synced_at')
             ->whereNotNull('email')
             ->where('email', '!=', '')
-            ->whereNotIn(DB::raw('LOWER(email)'), $customerEmails)
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('shopify_customers')
+                    ->whereNotNull('shopify_customers.email')
+                    ->whereColumn(DB::raw('LOWER(shopify_customers.email)'), DB::raw('LOWER(klaviyo_profiles.email)'));
+            })
             ->update(['engagement_synced_at' => now()]);
     }
 }
