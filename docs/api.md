@@ -58,6 +58,9 @@ Count records matching a domain filter.
 - `product.product` — variants with `default_code` (SKU), `standard_price` (COGS), `qty_available` (stock)
 - `product.template` — product templates (parent of variants)
 - `stock.quant` — detailed stock per warehouse location
+- `purchase.order` — purchase orders with `date_order`, `date_approve`, `partner_id` (supplier), `state`
+- `purchase.order.line` — PO lines with `product_id`, `product_qty`, `qty_received`, `date_planned`, `price_unit`
+- `stock.picking` — stock transfers with `picking_type_code` (incoming/outgoing), `date_done` (actual receipt), `origin` (PO reference)
 
 ---
 
@@ -277,6 +280,21 @@ Classify products via `ProductClassifier`. SKU-based rule tree assigns: ProductC
 
 ### `seasonal:calculate {--region=}`
 Calculate monthly seasonal indices via `SeasonalIndexCalculator`. Normalises order counts per calendar month to indices where average = 1.0. Optionally per region (country code).
+
+### `forecast:calculate-seasonal {--category=} {--region=}`
+Calculate seasonal indices per product category and forecast group via `CategorySeasonalCalculator`. Excludes historical demand event periods (Black Friday, launches) for clean seasonal patterns. Computes weighted group averages for maturity-based fallback. Without options: calculates all categories and groups.
+
+### `forecast:generate {scenario} {--year=}`
+Generate a demand forecast per product category per month for a given scenario. Calculation: baseline (previous year actuals) × scenario growth × product mix × seasonal index + demand event boosts − pull-forward deductions. Saves results as `ForecastSnapshot` rows via `ForecastTrackingService`. Displays monthly units and revenue summary.
+
+### `forecast:update-actuals {yearMonth}`
+Fill in actual units and revenue for a completed month across all scenario snapshots. Queries `shopify_line_items` per product category for the given month. Enables variance tracking (forecast vs. actuals).
+
+### `forecast:purchase-schedule {scenario} {--year=}`
+Generate a purchase schedule based on demand forecast, current Odoo stock and `SupplyProfile` parameters (lead time, MOQ, buffer). Per category: simulates stock depletion month-by-month, triggers orders when lookahead demand exceeds stock. Displays chronological timeline of purchase orders.
+
+### `forecast:sync-supply-profiles {--dry-run}`
+Analyze Odoo purchase orders and stock receipts to calculate supply chain metrics per product category. Computes median lead time (order-to-receipt), MOQ (10th percentile order quantity) and order frequency. Updates `SupplyProfile` records. Use `--dry-run` to preview without updating.
 
 ### `sync:all`
 Full daily pipeline orchestrator. Runs in sequence: `shopify:sync-orders` → `odoo:sync-products` → `odoo:sync-shipping-costs` → `klaviyo:sync-profiles` → `klaviyo:sync-campaigns` → `orders:compute-margins` → `customers:calculate-rfm` → `klaviyo:sync-engagement` → `profiles:flag-suspects` → `profiles:link` → `profiles:score-followers` → `klaviyo:sync-segments` → `shopify:sync-segments` → cache flush. Each step logs duration. Failures are logged but don't block subsequent steps.

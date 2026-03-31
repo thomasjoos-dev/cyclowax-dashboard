@@ -132,6 +132,16 @@ Demand Forecast System
               ├── categoryRunway() → forward-looking runway per categorie
               └── reorderTimeline() → chronologisch overzicht alle bestelacties
 
+  Supply Profile Analysis
+  └── SyncSupplyProfilesCommand (forecast:sync-supply-profiles)
+        └── SupplyProfileAnalyzer
+              ├── Fetches purchase.order.line + stock.picking (incoming, done) via OdooClient
+              ├── Matches Odoo product IDs → ProductCategory via products tabel
+              ├── Lead time: mediaan van (date_done - date_order) per categorie
+              ├── MOQ: 10e percentiel van historische bestelhoeveelheden
+              ├── Bestelfrequentie: gemiddeld aantal dagen tussen bestellingen
+              └── Updatet SupplyProfile records met berekende waarden
+
   Forecast Groups (ForecastGroup enum):
   ├── Ride Activity: WaxTablet, PocketWax — km-gedreven verbruik
   ├── Getting Started: StarterKit, WaxKit, Bundle — acquisitie-producten
@@ -179,7 +189,8 @@ app/Services/
 ├── Forecast/      ForecastService, ScenarioService, CohortProjectionService,
 │                  GoalService, StockForecastService, SeasonalIndexCalculator,
 │                  CategorySeasonalCalculator, DemandForecastService,
-│                  DemandEventService, ForecastTrackingService, StockPlanningService
+│                  DemandEventService, ForecastTrackingService, StockPlanningService,
+│                  SupplyProfileAnalyzer
 ├── Scoring/       RfmScoringService, FollowerScorer, ChannelClassificationService,
 │                  ProductClassifier, SuspectProfileFlagger, SegmentTransitionLogger,
 │                  OrderMarginCalculator
