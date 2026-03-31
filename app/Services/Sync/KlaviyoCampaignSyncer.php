@@ -190,6 +190,12 @@ class KlaviyoCampaignSyncer
             $results = $response['data']['attributes']['results'] ?? [];
 
             if (empty($results)) {
+                // Mark as attempted so it's not retried indefinitely
+                $campaign->update(['recipients' => -1]);
+                Log::info('Campaign has no reporting data (marked as attempted)', [
+                    'campaign' => $campaign->name, 'id' => $campaign->klaviyo_id,
+                ]);
+
                 return;
             }
 
