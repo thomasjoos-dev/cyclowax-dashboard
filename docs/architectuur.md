@@ -114,6 +114,8 @@ Demand Forecast System
   │           └── DemandEventService (historische events als exclusie-filter)
   ├── GenerateDemandForecastCommand (forecast:generate {scenario})
   │     ├── DemandForecastService (kernberekening)
+  │     │     ├── validateProductMixes() — shares in [0,1], som per type 0.95–1.05
+  │     │     ├── Q1 completeness check — exception bij 0 maanden, warning bij <3
   │     │     ├── baseline (vorig jaar) × scenario growth × product mix × seasonal index
   │     │     ├── + DemandEvent boost (geplande campagnes/launches)
   │     │     ├── - Pull-forward deductie (alleen Getting Started categorieën)
@@ -132,6 +134,14 @@ Demand Forecast System
               ├── categoryRunway() → forward-looking runway per categorie
               └── reorderTimeline() → chronologisch overzicht alle bestelacties
 
+  Input Validation
+  ├── InvalidProductMixException — shares buiten bereik of som buiten 0.95–1.05
+  ├── InsufficientBaselineException — geen Q1 actuals beschikbaar
+  ├── Stock freshness check — ProductionScheduleService::stockFreshness() > 48u = stale
+  ├── Supply profile validation — validated_at/validated_by velden, warning bij unvalidated
+  └── ValidateBomCommand (forecast:validate-bom)
+        └── Controleert: orphan BOMs, lege explosies, ontbrekende lead times, producten zonder BOM
+
   Supply Profile Analysis
   └── SyncSupplyProfilesCommand (forecast:sync-supply-profiles)
         └── SupplyProfileAnalyzer
@@ -140,7 +150,8 @@ Demand Forecast System
               ├── Lead time: mediaan van (date_done - date_order) per categorie
               ├── MOQ: 10e percentiel van historische bestelhoeveelheden
               ├── Bestelfrequentie: gemiddeld aantal dagen tussen bestellingen
-              └── Updatet SupplyProfile records met berekende waarden
+              ├── Updatet SupplyProfile records met berekende waarden
+              └── Reset validated_at bij automatische LT/MOQ wijzigingen
 
   Forecast Groups (ForecastGroup enum):
   ├── Ride Activity: WaxTablet, PocketWax — km-gedreven verbruik
