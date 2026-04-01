@@ -23,6 +23,7 @@ class SupplyProfile extends Model
             'assembly_lead_time_days' => 'integer',
             'moq' => 'integer',
             'buffer_days' => 'integer',
+            'validated_at' => 'datetime',
         ];
     }
 }

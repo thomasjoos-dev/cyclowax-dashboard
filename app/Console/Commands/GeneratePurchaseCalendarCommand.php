@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\Scenario;
+use App\Models\SupplyProfile;
+use App\Services\Forecast\ProductionScheduleService;
 use App\Services\Forecast\PurchaseCalendarService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -12,7 +14,7 @@ use Illuminate\Console\Command;
 #[Description('Generate purchase + production calendar based on demand forecast, BOM explosion and stock netting')]
 class GeneratePurchaseCalendarCommand extends Command
 {
-    public function handle(PurchaseCalendarService $calendarService): int
+    public function handle(PurchaseCalendarService $calendarService, ProductionScheduleService $productionSchedule): int
     {
         $scenarioName = $this->argument('scenario');
         $year = (int) ($this->option('year') ?? now()->year);
@@ -24,6 +26,10 @@ class GeneratePurchaseCalendarCommand extends Command
 
             return self::FAILURE;
         }
+
+        // Data quality warnings
+        $this->checkStockFreshness($productionSchedule);
+        $this->checkSupplyProfileValidation();
 
         $this->info("Generating purchase + production calendar: {$scenario->label} ({$year})...");
         $this->newLine();
@@ -108,6 +114,36 @@ class GeneratePurchaseCalendarCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    private function checkStockFreshness(ProductionScheduleService $productionSchedule): void
+    {
+        $freshness = $productionSchedule->stockFreshness();
+
+        if ($freshness['latest_at'] === null) {
+            $this->warn('⚠ No stock snapshots found. Run odoo:sync-products first.');
+            $this->newLine();
+
+            return;
+        }
+
+        if ($freshness['is_stale']) {
+            $this->warn("⚠ Stock data is {$freshness['age_hours']}h old (last sync: {$freshness['latest_at']->format('Y-m-d H:i')}). Netting may be inaccurate. Run odoo:sync-products to refresh.");
+            $this->newLine();
+        }
+    }
+
+    private function checkSupplyProfileValidation(): void
+    {
+        $unvalidated = SupplyProfile::whereNull('validated_at')->get();
+
+        if ($unvalidated->isEmpty()) {
+            return;
+        }
+
+        $categories = $unvalidated->map(fn ($p) => $p->product_category->value)->implode(', ');
+        $this->warn("⚠ {$unvalidated->count()} supply profile(s) not validated by procurement: {$categories}");
+        $this->newLine();
     }
 
     /**

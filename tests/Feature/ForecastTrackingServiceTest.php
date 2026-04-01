@@ -64,8 +64,8 @@ function setupTrackingScenario(): Scenario
         ]);
     }
 
-    ScenarioProductMix::create(['scenario_id' => $scenario->id, 'product_category' => ProductCategory::StarterKit->value, 'acq_share' => 0.70, 'repeat_share' => 0.10, 'avg_unit_price' => 200.00]);
-    ScenarioProductMix::create(['scenario_id' => $scenario->id, 'product_category' => ProductCategory::WaxTablet->value, 'acq_share' => 0.10, 'repeat_share' => 0.50, 'avg_unit_price' => 30.00]);
+    ScenarioProductMix::create(['scenario_id' => $scenario->id, 'product_category' => ProductCategory::StarterKit->value, 'acq_share' => 0.65, 'repeat_share' => 0.35, 'avg_unit_price' => 200.00]);
+    ScenarioProductMix::create(['scenario_id' => $scenario->id, 'product_category' => ProductCategory::WaxTablet->value, 'acq_share' => 0.35, 'repeat_share' => 0.65, 'avg_unit_price' => 30.00]);
 
     foreach ([ProductCategory::StarterKit, ProductCategory::WaxTablet] as $cat) {
         for ($m = 1; $m <= 12; $m++) {

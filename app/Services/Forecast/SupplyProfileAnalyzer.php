@@ -110,6 +110,13 @@ class SupplyProfileAnalyzer
 
             if (! empty($updates)) {
                 $old = $profile->only(array_keys($updates));
+
+                // Reset validation when key supply parameters change
+                if (isset($updates['procurement_lead_time_days']) || isset($updates['moq'])) {
+                    $updates['validated_at'] = null;
+                    $updates['validated_by'] = null;
+                }
+
                 $profile->update($updates);
                 $changes[$categoryValue] = ['old' => $old, 'new' => $updates];
             }

@@ -3,6 +3,8 @@
 use App\Enums\DemandEventType;
 use App\Enums\ForecastGroup;
 use App\Enums\ProductCategory;
+use App\Exceptions\InsufficientBaselineException;
+use App\Exceptions\InvalidProductMixException;
 use App\Models\Product;
 use App\Models\Scenario;
 use App\Models\ScenarioAssumption;
@@ -14,6 +16,7 @@ use App\Models\ShopifyOrder;
 use App\Services\Forecast\DemandEventService;
 use App\Services\Forecast\DemandForecastService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 
 uses(RefreshDatabase::class);
 
@@ -91,19 +94,19 @@ function setupForecastScenario(): Scenario
         ]);
     }
 
-    // Create product mixes
+    // Create product mixes (shares must sum to ~1.0 per type)
     ScenarioProductMix::create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::StarterKit->value,
-        'acq_share' => 0.60,
-        'repeat_share' => 0.10,
+        'acq_share' => 0.65,
+        'repeat_share' => 0.35,
         'avg_unit_price' => 200.00,
     ]);
     ScenarioProductMix::create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::WaxTablet->value,
-        'acq_share' => 0.10,
-        'repeat_share' => 0.50,
+        'acq_share' => 0.35,
+        'repeat_share' => 0.65,
         'avg_unit_price' => 30.00,
     ]);
 
@@ -178,7 +181,7 @@ it('generates total forecast with year summary', function () {
 
     // Sum of months should equal year total
     $monthlySum = collect($total['months'])->sum('revenue');
-    expect($monthlySum)->toBe($total['year_total']['revenue']);
+    expect(round($monthlySum, 2))->toBe($total['year_total']['revenue']);
 });
 
 it('applies pull-forward only to Getting Started categories', function () {
@@ -247,4 +250,131 @@ it('handles scenario without product mixes gracefully', function () {
     foreach ($forecast as $monthData) {
         expect($monthData)->toBeEmpty();
     }
+});
+
+it('throws InvalidProductMixException when acq_share sum exceeds tolerance', function () {
+    $scenario = setupForecastScenario();
+
+    // Override mixes with shares that sum to 1.30
+    ScenarioProductMix::where('scenario_id', $scenario->id)->delete();
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::StarterKit->value,
+        'acq_share' => 0.80,
+        'repeat_share' => 0.50,
+        'avg_unit_price' => 200.00,
+    ]);
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::WaxTablet->value,
+        'acq_share' => 0.50,
+        'repeat_share' => 0.50,
+        'avg_unit_price' => 30.00,
+    ]);
+
+    $service = app(DemandForecastService::class);
+
+    expect(fn () => $service->forecastYear($scenario->fresh(), 2026))
+        ->toThrow(InvalidProductMixException::class, 'acq_share');
+});
+
+it('throws InvalidProductMixException when repeat_share sum is below tolerance', function () {
+    $scenario = setupForecastScenario();
+
+    // Override mixes with repeat shares that sum to 0.30
+    ScenarioProductMix::where('scenario_id', $scenario->id)->delete();
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::StarterKit->value,
+        'acq_share' => 0.50,
+        'repeat_share' => 0.10,
+        'avg_unit_price' => 200.00,
+    ]);
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::WaxTablet->value,
+        'acq_share' => 0.50,
+        'repeat_share' => 0.20,
+        'avg_unit_price' => 30.00,
+    ]);
+
+    $service = app(DemandForecastService::class);
+
+    expect(fn () => $service->forecastYear($scenario->fresh(), 2026))
+        ->toThrow(InvalidProductMixException::class, 'repeat_share');
+});
+
+it('throws InvalidProductMixException when individual share is out of range', function () {
+    $scenario = setupForecastScenario();
+
+    ScenarioProductMix::where('scenario_id', $scenario->id)->delete();
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::StarterKit->value,
+        'acq_share' => 1.50,
+        'repeat_share' => 0.50,
+        'avg_unit_price' => 200.00,
+    ]);
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::WaxTablet->value,
+        'acq_share' => -0.50,
+        'repeat_share' => 0.50,
+        'avg_unit_price' => 30.00,
+    ]);
+
+    $service = app(DemandForecastService::class);
+
+    expect(fn () => $service->forecastYear($scenario->fresh(), 2026))
+        ->toThrow(InvalidProductMixException::class, 'out of valid range');
+});
+
+it('throws InsufficientBaselineException when no Q1 data exists', function () {
+    // Create scenario without any order data
+    $scenario = Scenario::factory()->create(['year' => 2026]);
+    ScenarioAssumption::factory()->create([
+        'scenario_id' => $scenario->id,
+        'quarter' => 'Q2',
+        'acq_rate' => 1.0,
+        'repeat_rate' => 0.20,
+        'repeat_aov' => 80.00,
+    ]);
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::StarterKit->value,
+        'acq_share' => 0.50,
+        'repeat_share' => 0.50,
+        'avg_unit_price' => 200.00,
+    ]);
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::WaxTablet->value,
+        'acq_share' => 0.50,
+        'repeat_share' => 0.50,
+        'avg_unit_price' => 30.00,
+    ]);
+
+    $service = app(DemandForecastService::class);
+
+    expect(fn () => $service->forecastYear($scenario, 2026))
+        ->toThrow(InsufficientBaselineException::class);
+});
+
+it('logs warning when Q1 data is partial', function () {
+    $scenario = setupForecastScenario();
+
+    // Delete Jan and Feb orders for 2026, keeping only March
+    ShopifyOrder::where('ordered_at', 'like', '2026-01%')
+        ->orWhere('ordered_at', 'like', '2026-02%')
+        ->delete();
+
+    Log::shouldReceive('warning')
+        ->once()
+        ->withArgs(fn (string $msg) => str_contains($msg, 'Incomplete Q1'));
+
+    $service = app(DemandForecastService::class);
+    $forecast = $service->forecastYear($scenario->fresh(), 2026);
+
+    // Should still produce a forecast (March data available)
+    expect($forecast)->toHaveCount(12);
 });

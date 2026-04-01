@@ -63,6 +63,7 @@ class SyncSupplyProfilesCommand extends Command
             $this->info('No changes needed — profiles already match.');
         } else {
             $this->info('Updated '.count($changes).' supply profiles.');
+            $this->warn('Updated profiles need re-validation by procurement. Mark as validated via the dashboard or tinker.');
         }
 
         return self::SUCCESS;

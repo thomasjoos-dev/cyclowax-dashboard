@@ -3,6 +3,7 @@
 namespace App\Services\Forecast;
 
 use App\Models\OpenPurchaseOrder;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 class ProductionScheduleService
@@ -10,6 +11,29 @@ class ProductionScheduleService
     public function __construct(
         private BomExplosionService $bomExplosion,
     ) {}
+
+    /**
+     * Check freshness of the latest stock snapshot.
+     *
+     * @return array{latest_at: CarbonImmutable|null, age_hours: float|null, is_stale: bool}
+     */
+    public function stockFreshness(int $staleThresholdHours = 48): array
+    {
+        $row = DB::selectOne('SELECT MAX(recorded_at) as latest FROM product_stock_snapshots');
+        $latestAt = $row?->latest ? CarbonImmutable::parse($row->latest) : null;
+
+        if (! $latestAt) {
+            return ['latest_at' => null, 'age_hours' => null, 'is_stale' => true];
+        }
+
+        $ageHours = $latestAt->diffInMinutes(now()) / 60;
+
+        return [
+            'latest_at' => $latestAt,
+            'age_hours' => round($ageHours, 1),
+            'is_stale' => $ageHours > $staleThresholdHours,
+        ];
+    }
 
     /**
      * Generate a full purchase + production timeline for given SKU quantities.

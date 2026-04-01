@@ -4,9 +4,12 @@ namespace App\Services\Forecast;
 
 use App\Enums\ForecastGroup;
 use App\Enums\ProductCategory;
+use App\Exceptions\InsufficientBaselineException;
+use App\Exceptions\InvalidProductMixException;
 use App\Models\Scenario;
 use App\Models\ScenarioProductMix;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 class DemandForecastService
 {
@@ -25,9 +28,15 @@ class DemandForecastService
     {
         $scenario->loadMissing(['assumptions', 'productMixes']);
 
-        $baselineByMonth = $this->getBaselineByMonth($year);
-        $assumptions = $this->indexAssumptionsByQuarter($scenario);
         $mixes = $this->indexMixesByCategory($scenario);
+
+        if (count($mixes) > 0) {
+            $this->validateProductMixes(collect($mixes));
+        }
+
+        $baselineByMonth = $this->getBaselineByMonth($year, count($mixes) > 0);
+        $assumptions = $this->indexAssumptionsByQuarter($scenario);
+
         $plannedEvents = $this->demandEventService->plannedForYear($year);
 
         $forecast = [];
@@ -157,7 +166,7 @@ class DemandForecastService
      *
      * @return array<string, array{acq_rev: float, rep_rev: float, new_customers: int, repeat_orders: int}>
      */
-    private function getBaselineByMonth(int $year): array
+    private function getBaselineByMonth(int $year, bool $requireQ1 = true): array
     {
         $prevYear = $year - 1;
         $rows = $this->forecastService->monthlyActuals("{$prevYear}-01-01", "{$year}-01-01");
@@ -168,6 +177,30 @@ class DemandForecastService
         $indexed = [];
         foreach (array_merge($rows, $currentRows) as $row) {
             $indexed[$row['month']] = $row;
+        }
+
+        // Check Q1 completeness
+        $q1Available = 0;
+        $q1Missing = [];
+        for ($m = 1; $m <= 3; $m++) {
+            $key = sprintf('%d-%02d', $year, $m);
+            if (isset($indexed[$key])) {
+                $q1Available++;
+            } else {
+                $q1Missing[] = $key;
+            }
+        }
+
+        if ($requireQ1 && $q1Available === 0) {
+            throw InsufficientBaselineException::noQ1Data($year);
+        }
+
+        if ($requireQ1 && $q1Available < 3) {
+            Log::warning('Incomplete Q1 data for forecast baseline', [
+                'year' => $year,
+                'missing_months' => $q1Missing,
+                'available' => $q1Available,
+            ]);
         }
 
         // Map previous year months to current year for baseline
@@ -216,6 +249,45 @@ class DemandForecastService
         return $scenario->productMixes
             ->keyBy(fn (ScenarioProductMix $m) => $m->product_category->value)
             ->all();
+    }
+
+    /**
+     * Validate that product mix shares are within acceptable ranges.
+     *
+     * @param  Collection<string, ScenarioProductMix>  $mixes
+     *
+     * @throws InvalidProductMixException
+     */
+    private function validateProductMixes(Collection $mixes): void
+    {
+        $violations = [];
+
+        foreach ($mixes as $categoryValue => $mix) {
+            $acq = (float) $mix->acq_share;
+            $rep = (float) $mix->repeat_share;
+
+            if ($acq < 0 || $acq > 1) {
+                $violations["{$categoryValue}.acq_share"] = "value {$acq} not in [0, 1]";
+            }
+            if ($rep < 0 || $rep > 1) {
+                $violations["{$categoryValue}.repeat_share"] = "value {$rep} not in [0, 1]";
+            }
+        }
+
+        if (count($violations) > 0) {
+            throw InvalidProductMixException::sharesOutOfRange($violations);
+        }
+
+        $acqSum = $mixes->sum(fn (ScenarioProductMix $m) => (float) $m->acq_share);
+        $repSum = $mixes->sum(fn (ScenarioProductMix $m) => (float) $m->repeat_share);
+
+        if ($acqSum < 0.95 || $acqSum > 1.05) {
+            throw InvalidProductMixException::sumOutOfTolerance('acq_share', $acqSum);
+        }
+
+        if ($repSum < 0.95 || $repSum > 1.05) {
+            throw InvalidProductMixException::sumOutOfTolerance('repeat_share', $repSum);
+        }
     }
 
     /**

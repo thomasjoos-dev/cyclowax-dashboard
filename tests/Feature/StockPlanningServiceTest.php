@@ -112,12 +112,12 @@ function setupStockPlanningScenario(): Scenario
         ]);
     }
 
-    // High shares for wax_tablet to generate significant demand
+    // Single category: shares must be ~1.0 each (only category in scenario)
     ScenarioProductMix::create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::WaxTablet->value,
-        'acq_share' => 0.50,
-        'repeat_share' => 0.80,
+        'acq_share' => 1.00,
+        'repeat_share' => 1.00,
         'avg_unit_price' => 25.00,
     ]);
 
