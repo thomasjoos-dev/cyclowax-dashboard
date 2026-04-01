@@ -11,7 +11,7 @@ use App\Models\SeasonalIndex;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
-use App\Services\Forecast\ForecastTrackingService;
+use App\Services\Forecast\Tracking\ForecastTrackingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

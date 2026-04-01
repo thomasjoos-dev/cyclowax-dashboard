@@ -7,8 +7,8 @@ use App\Models\Product;
 use App\Models\SeasonalIndex;
 use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
-use App\Services\Forecast\CategorySeasonalCalculator;
-use App\Services\Forecast\DemandEventService;
+use App\Services\Forecast\Demand\CategorySeasonalCalculator;
+use App\Services\Forecast\Demand\DemandEventService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

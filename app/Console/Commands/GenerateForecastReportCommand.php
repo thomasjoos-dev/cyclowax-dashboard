@@ -3,8 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\Scenario;
-use App\Services\Forecast\ForecastService;
-use App\Services\Forecast\ScenarioService;
+use App\Services\Forecast\Demand\SalesBaselineService;
+use App\Services\Forecast\Tracking\ScenarioService;
 use App\Services\Support\AnalysisPdfService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -14,7 +14,7 @@ use Illuminate\Console\Command;
 #[Description('Generate 2026 Revenue Forecast PDF with 3 scenarios')]
 class GenerateForecastReportCommand extends Command
 {
-    public function handle(AnalysisPdfService $pdf, ForecastService $forecast, ScenarioService $scenarioService): int
+    public function handle(AnalysisPdfService $pdf, SalesBaselineService $forecast, ScenarioService $scenarioService): int
     {
         $this->info('Generating 2026 Revenue Forecast...');
 
@@ -206,7 +206,7 @@ class GenerateForecastReportCommand extends Command
      *
      * @return array<string, array{quarters: array, totals: array}>
      */
-    private function buildScenarios(ForecastService $forecast, ScenarioService $scenarioService, array $q1Actual): array
+    private function buildScenarios(SalesBaselineService $forecast, ScenarioService $scenarioService, array $q1Actual): array
     {
         $dbScenarios = $scenarioService->forYear(2026);
 

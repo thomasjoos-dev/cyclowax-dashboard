@@ -13,9 +13,9 @@ use App\Models\SeasonalIndex;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
-use App\Services\Forecast\CohortProjectionService;
-use App\Services\Forecast\DemandEventService;
-use App\Services\Forecast\DemandForecastService;
+use App\Services\Forecast\Demand\CohortProjectionService;
+use App\Services\Forecast\Demand\DemandEventService;
+use App\Services\Forecast\Demand\DemandForecastService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 

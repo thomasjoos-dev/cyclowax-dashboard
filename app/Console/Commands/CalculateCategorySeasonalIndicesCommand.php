@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Enums\ProductCategory;
-use App\Services\Forecast\CategorySeasonalCalculator;
+use App\Services\Forecast\Demand\CategorySeasonalCalculator;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

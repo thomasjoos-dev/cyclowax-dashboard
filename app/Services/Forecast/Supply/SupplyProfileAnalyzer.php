@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\Forecast;
+namespace App\Services\Forecast\Supply;
 
 use App\Enums\ProductCategory;
 use App\Models\SupplyProfile;

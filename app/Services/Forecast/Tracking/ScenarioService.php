@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\Forecast;
+namespace App\Services\Forecast\Tracking;
 
 use App\Models\Scenario;
 use Illuminate\Support\Collection;
@@ -22,7 +22,7 @@ class ScenarioService
     }
 
     /**
-     * Convert a Scenario's assumptions into the quarters array that ForecastService expects.
+     * Convert a Scenario's assumptions into the quarters array that SalesBaselineService expects.
      *
      * @return array<string, array{acq_rate: float, repeat_rate: float, repeat_aov: float}>
      */
@@ -44,11 +44,11 @@ class ScenarioService
     }
 
     /**
-     * Compare two scenarios side-by-side using ForecastService.
+     * Compare two scenarios side-by-side using SalesBaselineService.
      *
      * @return array{scenario_a: array, scenario_b: array, deltas: array}
      */
-    public function compare(Scenario $scenarioA, Scenario $scenarioB, ForecastService $forecast): array
+    public function compare(Scenario $scenarioA, Scenario $scenarioB, SalesBaselineService $forecast): array
     {
         $resultA = $forecast->calculateScenario($this->toForecastInput($scenarioA));
         $resultB = $forecast->calculateScenario($this->toForecastInput($scenarioB));

@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\Forecast\ForecastTrackingService;
+use App\Services\Forecast\Tracking\ForecastTrackingService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

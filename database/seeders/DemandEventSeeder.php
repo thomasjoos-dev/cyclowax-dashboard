@@ -4,7 +4,7 @@ namespace Database\Seeders;
 
 use App\Enums\DemandEventType;
 use App\Enums\ProductCategory;
-use App\Services\Forecast\DemandEventService;
+use App\Services\Forecast\Demand\DemandEventService;
 use Illuminate\Database\Seeder;
 
 /**

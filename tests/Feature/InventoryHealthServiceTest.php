@@ -4,7 +4,7 @@ use App\Models\Product;
 use App\Models\ProductStockSnapshot;
 use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
-use App\Services\Forecast\StockForecastService;
+use App\Services\Forecast\Supply\InventoryHealthService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -24,7 +24,7 @@ it('calculates burn rate from sales history', function () {
         'quantity' => 30,
     ]);
 
-    $service = app(StockForecastService::class);
+    $service = app(InventoryHealthService::class);
     $burnRate = $service->burnRate($product->id, 90);
 
     expect($burnRate)->toBe(0.33);
@@ -51,7 +51,7 @@ it('calculates stock runway', function () {
         'quantity' => 10,
     ]);
 
-    $service = app(StockForecastService::class);
+    $service = app(InventoryHealthService::class);
     $result = $service->stockRunway($product->id, 90);
 
     expect($result['qty_free'])->toBe(100.00)
@@ -68,7 +68,7 @@ it('returns null runway when no sales', function () {
         'recorded_at' => now(),
     ]);
 
-    $service = app(StockForecastService::class);
+    $service = app(InventoryHealthService::class);
     $result = $service->stockRunway($product->id, 90);
 
     expect($result['runway_days'])->toBeNull()
@@ -96,7 +96,7 @@ it('flags reorder alert when runway below threshold', function () {
         'quantity' => 90,
     ]);
 
-    $service = app(StockForecastService::class);
+    $service = app(InventoryHealthService::class);
     $result = $service->reorderAlert($product->id, leadTimeDays: 21, bufferDays: 7);
 
     // 10 qty / 1.0/day = 10 days runway, threshold = 21 + 7 = 28 → needs reorder

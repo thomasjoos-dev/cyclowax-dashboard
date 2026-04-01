@@ -1,15 +1,16 @@
 <?php
 
-namespace App\Services\Forecast;
+namespace App\Services\Forecast\Demand;
 
 use App\Models\Scenario;
 use App\Services\Analysis\DashboardService;
+use App\Services\Forecast\Tracking\ScenarioService;
 
 class CohortProjectionService
 {
     public function __construct(
         private DashboardService $dashboard,
-        private ForecastService $forecast,
+        private SalesBaselineService $forecast,
         private ScenarioService $scenarioService,
     ) {}
 

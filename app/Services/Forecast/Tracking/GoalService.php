@@ -1,17 +1,18 @@
 <?php
 
-namespace App\Services\Forecast;
+namespace App\Services\Forecast\Tracking;
 
 use App\Models\KeyResult;
 use App\Models\Objective;
 use App\Services\Analysis\DashboardService;
+use App\Services\Forecast\Demand\SalesBaselineService;
 use Illuminate\Support\Collection;
 
 class GoalService
 {
     public function __construct(
         private DashboardService $dashboard,
-        private ForecastService $forecast,
+        private SalesBaselineService $forecast,
         private ScenarioService $scenarioService,
     ) {}
 
@@ -214,7 +215,7 @@ class GoalService
     }
 
     /**
-     * Map a metric_key to the corresponding key in ForecastService totals.
+     * Map a metric_key to the corresponding key in SalesBaselineService totals.
      */
     private function metricToScenarioKey(string $metricKey): ?string
     {

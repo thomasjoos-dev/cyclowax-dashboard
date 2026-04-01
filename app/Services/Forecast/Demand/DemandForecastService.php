@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\Forecast;
+namespace App\Services\Forecast\Demand;
 
 use App\Enums\ForecastGroup;
 use App\Enums\ProductCategory;
@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Log;
 class DemandForecastService
 {
     public function __construct(
-        private ForecastService $forecastService,
+        private SalesBaselineService $forecastService,
         private CategorySeasonalCalculator $seasonalCalculator,
         private DemandEventService $demandEventService,
         private CohortProjectionService $cohortProjectionService,

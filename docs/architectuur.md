@@ -133,12 +133,12 @@ Demand Forecast System
   │           └── paceProjection() — bijgestelde jaarprojectie op basis van YTD
   ├── UpdateForecastActualsCommand (forecast:update-actuals {YYYY-MM})
   │     └── ForecastTrackingService.updateActuals()
-  └── GeneratePurchaseScheduleCommand (forecast:purchase-schedule {scenario})
-        └── StockPlanningService
-              ├── demand forecast + huidige voorraad + SupplyProfile (lead time, MOQ, buffer)
-              ├── purchaseSchedule() → bestelmoment + hoeveelheid per categorie
-              ├── categoryRunway() → forward-looking runway per categorie
-              └── reorderTimeline() → chronologisch overzicht alle bestelacties
+  └── InventoryHealthService
+        ├── burnRate() → dagelijkse verkoop per product (sales velocity)
+        ├── stockRunway() → resterende voorraad in dagen per product
+        ├── reorderAlert() → signaal bij runway < lead time + buffer
+        ├── portfolioStatus() → portfolio-breed overzicht stock status
+        └── categoryRunway() → forward-looking runway per categorie op basis van forecast
 
   Input Validation
   ├── InvalidProductMixException — shares buiten bereik of som buiten 0.95–1.05
@@ -237,13 +237,13 @@ app/Services/
 ├── Analysis/      DashboardService (delegator), *AnalyticsService (4x),
 │                  DtcSalesQueryService, OdooB2bSalesService, Channel*, Customer*,
 │                  Product*, PurchaseLadder*, RepeatProbability*, SegmentMovement*
-├── Forecast/      ForecastService, ScenarioService, CohortProjectionService,
-│                  GoalService, StockForecastService, SeasonalIndexCalculator,
-│                  CategorySeasonalCalculator, DemandForecastService,
-│                  DemandEventService, ForecastTrackingService, StockPlanningService,
-│                  SupplyProfileAnalyzer, ComponentNettingService,
-│                  ProductionTimelineService, BomExplosionService,
-│                  SkuMixService, PurchaseCalendarService
+├── Forecast/
+│   ├── Demand/    SalesBaselineService, DemandForecastService, CohortProjectionService,
+│   │              CategorySeasonalCalculator, SeasonalIndexCalculator, DemandEventService
+│   ├── Supply/    ComponentNettingService, ProductionTimelineService, BomExplosionService,
+│   │              PurchaseCalendarService, InventoryHealthService, SupplyProfileAnalyzer
+│   ├── Tracking/  ForecastTrackingService, ScenarioService, GoalService
+│   └── SkuMixService (cross-cutting)
 ├── Scoring/       RfmScoringService, FollowerScorer, ChannelClassificationService,
 │                  ProductClassifier, SuspectProfileFlagger, SegmentTransitionLogger,
 │                  OrderMarginCalculator

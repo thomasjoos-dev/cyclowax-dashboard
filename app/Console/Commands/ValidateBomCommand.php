@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Product;
 use App\Models\ProductBom;
-use App\Services\Forecast\BomExplosionService;
+use App\Services\Forecast\Supply\BomExplosionService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

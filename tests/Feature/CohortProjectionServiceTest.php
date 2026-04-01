@@ -1,6 +1,6 @@
 <?php
 
-use App\Services\Forecast\CohortProjectionService;
+use App\Services\Forecast\Demand\CohortProjectionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

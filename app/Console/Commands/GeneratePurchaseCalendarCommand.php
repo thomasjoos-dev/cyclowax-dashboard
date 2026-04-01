@@ -4,8 +4,8 @@ namespace App\Console\Commands;
 
 use App\Models\Scenario;
 use App\Models\SupplyProfile;
-use App\Services\Forecast\ComponentNettingService;
-use App\Services\Forecast\PurchaseCalendarService;
+use App\Services\Forecast\Supply\ComponentNettingService;
+use App\Services\Forecast\Supply\PurchaseCalendarService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

@@ -1,9 +1,10 @@
 <?php
 
-namespace App\Services\Forecast;
+namespace App\Services\Forecast\Tracking;
 
 use App\Models\ForecastSnapshot;
 use App\Models\Scenario;
+use App\Services\Forecast\Demand\DemandForecastService;
 use App\Support\DbDialect;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;

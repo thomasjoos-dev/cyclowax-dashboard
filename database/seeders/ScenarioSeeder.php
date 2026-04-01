@@ -2,7 +2,7 @@
 
 namespace Database\Seeders;
 
-use App\Services\ScenarioService;
+use App\Services\Forecast\Tracking\ScenarioService;
 use Illuminate\Database\Seeder;
 
 class ScenarioSeeder extends Seeder

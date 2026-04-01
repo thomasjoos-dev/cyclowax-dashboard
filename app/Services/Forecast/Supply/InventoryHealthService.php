@@ -1,11 +1,18 @@
 <?php
 
-namespace App\Services\Forecast;
+namespace App\Services\Forecast\Supply;
 
+use App\Enums\ProductCategory;
+use App\Models\Scenario;
+use App\Services\Forecast\Demand\DemandForecastService;
 use Illuminate\Support\Facades\DB;
 
-class StockForecastService
+class InventoryHealthService
 {
+    public function __construct(
+        private DemandForecastService $demandForecastService,
+    ) {}
+
     /**
      * Average daily sales (burn rate) for a product based on line item history.
      * Works without stock snapshots — uses sales velocity as proxy.
@@ -144,6 +151,86 @@ class StockForecastService
                 'runway_days' => $runwayDays,
                 'status' => $status,
             ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Forward-looking runway for a category based on forecast demand.
+     *
+     * @return array{current_stock: int, monthly_demand: array<int, int>, depletion_month: int|null, runway_days: int|null}
+     */
+    public function categoryRunway(ProductCategory $category, Scenario $scenario, int $year): array
+    {
+        $forecast = $this->demandForecastService->forecastYear($scenario, $year);
+        $currentStock = $this->getCurrentStockByCategory();
+        $stock = $currentStock[$category->value] ?? 0;
+
+        $monthlyDemand = [];
+        $depletionMonth = null;
+        $remainingDays = 0;
+
+        for ($month = 1; $month <= 12; $month++) {
+            $monthData = $forecast[$month][$category->value] ?? null;
+            $demand = $monthData ? $monthData['units'] : 0;
+            $monthlyDemand[$month] = $demand;
+
+            if ($depletionMonth === null) {
+                $stock -= $demand;
+                if ($stock <= 0 && $demand > 0) {
+                    $depletionMonth = $month;
+                    $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $month, $year);
+                    $dailyDemand = $demand / $daysInMonth;
+                    $remainingDays = $dailyDemand > 0
+                        ? (int) floor(($stock + $demand) / $dailyDemand)
+                        : $daysInMonth;
+                }
+            }
+        }
+
+        $runwayDays = null;
+        if ($depletionMonth !== null) {
+            $fullMonthDays = 0;
+            for ($m = 1; $m < $depletionMonth; $m++) {
+                $fullMonthDays += cal_days_in_month(CAL_GREGORIAN, $m, $year);
+            }
+            $runwayDays = $fullMonthDays + $remainingDays;
+        }
+
+        return [
+            'current_stock' => $currentStock[$category->value] ?? 0,
+            'monthly_demand' => $monthlyDemand,
+            'depletion_month' => $depletionMonth,
+            'runway_days' => $runwayDays,
+        ];
+    }
+
+    /**
+     * Get current total stock per product category from latest snapshots.
+     *
+     * @return array<string, int>
+     */
+    private function getCurrentStockByCategory(): array
+    {
+        $rows = DB::select('
+            SELECT
+                p.product_category,
+                SUM(pss.qty_free) as total_free
+            FROM product_stock_snapshots pss
+            JOIN products p ON p.id = pss.product_id
+            INNER JOIN (
+                SELECT product_id, MAX(recorded_at) as max_date
+                FROM product_stock_snapshots
+                GROUP BY product_id
+            ) latest ON latest.product_id = pss.product_id AND latest.max_date = pss.recorded_at
+            WHERE p.product_category IS NOT NULL
+            GROUP BY p.product_category
+        ');
+
+        $result = [];
+        foreach ($rows as $row) {
+            $result[$row->product_category] = (int) $row->total_free;
         }
 
         return $result;

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\Forecast;
+namespace App\Services\Forecast\Supply;
 
 use App\Models\OpenPurchaseOrder;
 use Carbon\CarbonImmutable;

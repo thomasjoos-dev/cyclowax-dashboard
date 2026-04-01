@@ -3,7 +3,7 @@
 use App\Models\OpenPurchaseOrder;
 use App\Models\Product;
 use App\Models\ProductStockSnapshot;
-use App\Services\Forecast\ComponentNettingService;
+use App\Services\Forecast\Supply\ComponentNettingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

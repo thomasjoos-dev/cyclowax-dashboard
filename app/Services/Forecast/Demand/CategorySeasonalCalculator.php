@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\Forecast;
+namespace App\Services\Forecast\Demand;
 
 use App\Enums\ForecastGroup;
 use App\Enums\ProductCategory;

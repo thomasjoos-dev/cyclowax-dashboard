@@ -1,10 +1,12 @@
 <?php
 
-namespace App\Services\Forecast;
+namespace App\Services\Forecast\Supply;
 
 use App\Enums\ProductCategory;
 use App\Models\Scenario;
 use App\Models\SupplyProfile;
+use App\Services\Forecast\Demand\DemandForecastService;
+use App\Services\Forecast\SkuMixService;
 
 class PurchaseCalendarService
 {

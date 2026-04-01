@@ -3,8 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\Scenario;
-use App\Services\Forecast\DemandForecastService;
-use App\Services\Forecast\ForecastTrackingService;
+use App\Services\Forecast\Demand\DemandForecastService;
+use App\Services\Forecast\Tracking\ForecastTrackingService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;

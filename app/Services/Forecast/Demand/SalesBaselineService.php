@@ -1,11 +1,11 @@
 <?php
 
-namespace App\Services\Forecast;
+namespace App\Services\Forecast\Demand;
 
 use App\Support\DbDialect;
 use Illuminate\Support\Facades\DB;
 
-class ForecastService
+class SalesBaselineService
 {
     /**
      * Actuals for any period, split into acquisition vs repeat.

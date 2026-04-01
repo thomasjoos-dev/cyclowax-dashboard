@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\SupplyProfile;
-use App\Services\Forecast\SupplyProfileAnalyzer;
+use App\Services\Forecast\Supply\SupplyProfileAnalyzer;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
