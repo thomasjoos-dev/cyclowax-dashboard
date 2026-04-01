@@ -17,6 +17,7 @@ class DemandForecastService
         private ForecastService $forecastService,
         private CategorySeasonalCalculator $seasonalCalculator,
         private DemandEventService $demandEventService,
+        private CohortProjectionService $cohortProjectionService,
     ) {}
 
     /**
@@ -39,8 +40,15 @@ class DemandForecastService
 
         $plannedEvents = $this->demandEventService->plannedForYear($year);
 
+        // Fetch retention curve for cohort-based repeat model
+        $curveData = $this->cohortProjectionService->retentionCurve();
+        $retentionCurve = $curveData['months'];
+        $useCohortModel = ! empty($retentionCurve);
+        $curveAdjustment = (float) ($scenario->retention_curve_adjustment ?? 1.0);
+
         $forecast = [];
         $cumulativeCustomers = 0;
+        $monthlyCohorts = []; // month → new customer count for cohort tracking
 
         for ($month = 1; $month <= 12; $month++) {
             $quarter = 'Q'.ceil($month / 3);
@@ -60,13 +68,25 @@ class DemandForecastService
                 // Q1: use actuals directly, distribute via product mix
                 $acqRevenue = $baseline['acq_rev'];
                 $repRevenue = $baseline['rep_rev'];
-                $cumulativeCustomers += $baseline['new_customers'];
+                $newCustomers = $baseline['new_customers'];
+                $cumulativeCustomers += $newCustomers;
+                $monthlyCohorts[$month] = $newCustomers;
             } elseif ($qa) {
                 $baseQ1 = $baselineByMonth[sprintf('%d-%02d', $year - 1, $month)] ?? $baseline;
                 $acqRevenue = $baseQ1['acq_rev'] * $qa['acq_rate'];
-                $repOrders = $cumulativeCustomers * $qa['repeat_rate'] / 3; // per month
-                $repRevenue = $repOrders * $qa['repeat_aov'];
-                $cumulativeCustomers += (int) round($baseQ1['new_customers'] * $qa['acq_rate']);
+                $newCustomers = (int) round($baseQ1['new_customers'] * $qa['acq_rate']);
+                $cumulativeCustomers += $newCustomers;
+                $monthlyCohorts[$month] = $newCustomers;
+
+                if ($useCohortModel) {
+                    $repRevenue = $this->calculateCohortRepeatRevenue(
+                        $monthlyCohorts, $month, $qa['repeat_aov'], $retentionCurve, $curveAdjustment,
+                    );
+                } else {
+                    // Flat fallback: original model
+                    $repOrders = $cumulativeCustomers * $qa['repeat_rate'] / 3;
+                    $repRevenue = $repOrders * $qa['repeat_aov'];
+                }
             } else {
                 $forecast[$month] = [];
 
@@ -158,6 +178,23 @@ class DemandForecastService
                 'units' => $yearUnits,
                 'revenue' => round($yearRevenue, 2),
             ],
+        ];
+    }
+
+    /**
+     * Describe which repeat model would be used for a given scenario.
+     *
+     * @return array{model: string, curve_adjustment: float, cohorts_used: int}
+     */
+    public function repeatModelInfo(Scenario $scenario): array
+    {
+        $curveData = $this->cohortProjectionService->retentionCurve();
+        $useCohortModel = ! empty($curveData['months']);
+
+        return [
+            'model' => $useCohortModel ? 'cohort' : 'flat',
+            'curve_adjustment' => (float) ($scenario->retention_curve_adjustment ?? 1.0),
+            'cohorts_used' => $curveData['cohorts_used'],
         ];
     }
 
@@ -288,6 +325,49 @@ class DemandForecastService
         if ($repSum < 0.95 || $repSum > 1.05) {
             throw InvalidProductMixException::sumOutOfTolerance('repeat_share', $repSum);
         }
+    }
+
+    /**
+     * Calculate repeat revenue for a forecast month using cohort-based retention.
+     * Loops through all prior cohorts, calculates their age, and sums incremental
+     * repeat revenue based on the retention curve delta (this month vs previous month).
+     *
+     * @param  array<int, int>  $cohorts  Month number → new customer count
+     * @param  int  $forecastMonth  The month (1-12) to calculate repeat for
+     * @param  float  $repeatAov  Average repeat order value
+     * @param  array<int, float>  $retentionCurve  Month → cumulative retention %
+     * @param  float  $curveAdjustment  Scalar to shift the curve (1.0 = no change)
+     */
+    private function calculateCohortRepeatRevenue(
+        array $cohorts,
+        int $forecastMonth,
+        float $repeatAov,
+        array $retentionCurve,
+        float $curveAdjustment = 1.0,
+    ): float {
+        $totalRepeatRevenue = 0.0;
+
+        foreach ($cohorts as $cohortMonth => $cohortSize) {
+            if ($cohortMonth >= $forecastMonth || $cohortSize <= 0) {
+                continue;
+            }
+
+            $age = $forecastMonth - $cohortMonth;
+            $prevAge = $age - 1;
+
+            $currentRetention = $this->cohortProjectionService->monthlyRetentionRate($age, $retentionCurve) * $curveAdjustment;
+            $previousRetention = $prevAge > 0
+                ? $this->cohortProjectionService->monthlyRetentionRate($prevAge, $retentionCurve) * $curveAdjustment
+                : 0.0;
+
+            // Incremental repeaters this month (delta between cumulative retention points)
+            $incrementalPct = max(0, $currentRetention - $previousRetention);
+            $incrementalRepeaters = $cohortSize * $incrementalPct / 100;
+
+            $totalRepeatRevenue += $incrementalRepeaters * $repeatAov;
+        }
+
+        return round($totalRepeatRevenue, 2);
     }
 
     /**

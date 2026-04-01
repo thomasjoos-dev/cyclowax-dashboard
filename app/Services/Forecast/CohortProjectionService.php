@@ -54,6 +54,53 @@ class CohortProjectionService
     }
 
     /**
+     * Get interpolated retention rate for a specific month age.
+     * Linearly interpolates between known data points in the curve.
+     *
+     * @param  array<int, float>  $retentionCurve  Month → cumulative retention %
+     */
+    public function monthlyRetentionRate(int $monthsAge, array $retentionCurve): float
+    {
+        if (empty($retentionCurve) || $monthsAge < 1) {
+            return 0.0;
+        }
+
+        if (isset($retentionCurve[$monthsAge])) {
+            return $retentionCurve[$monthsAge];
+        }
+
+        $months = array_keys($retentionCurve);
+        sort($months);
+
+        // Before first data point: linear scale from zero
+        if ($monthsAge < $months[0]) {
+            return round($retentionCurve[$months[0]] * ($monthsAge / $months[0]), 2);
+        }
+
+        // After last data point: plateau at last known value
+        $lastMonth = end($months);
+        if ($monthsAge > $lastMonth) {
+            return $retentionCurve[$lastMonth];
+        }
+
+        // Interpolate between surrounding points
+        $lower = null;
+        $upper = null;
+        foreach ($months as $m) {
+            if ($m <= $monthsAge) {
+                $lower = $m;
+            }
+            if ($m >= $monthsAge && $upper === null) {
+                $upper = $m;
+            }
+        }
+
+        $ratio = ($monthsAge - $lower) / ($upper - $lower);
+
+        return round($retentionCurve[$lower] + $ratio * ($retentionCurve[$upper] - $retentionCurve[$lower]), 2);
+    }
+
+    /**
      * Project cumulative revenue for a cohort over time.
      *
      * @param  int  $cohortSize  Number of new customers in the cohort

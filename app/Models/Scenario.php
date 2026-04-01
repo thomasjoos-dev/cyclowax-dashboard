@@ -21,6 +21,7 @@ class Scenario extends Model
         return [
             'year' => 'integer',
             'is_active' => 'boolean',
+            'retention_curve_adjustment' => 'decimal:2',
         ];
     }
 

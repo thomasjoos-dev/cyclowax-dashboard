@@ -13,6 +13,7 @@ use App\Models\SeasonalIndex;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
+use App\Services\Forecast\CohortProjectionService;
 use App\Services\Forecast\DemandEventService;
 use App\Services\Forecast\DemandForecastService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -377,4 +378,148 @@ it('logs warning when Q1 data is partial', function () {
 
     // Should still produce a forecast (March data available)
     expect($forecast)->toHaveCount(12);
+});
+
+it('uses cohort-based repeat model when retention curve is available', function () {
+    $scenario = setupForecastScenario();
+
+    // Mock CohortProjectionService to return a known retention curve
+    $retentionCurve = [
+        1 => 5.0,   // 5% cumulative at month 1
+        2 => 8.0,
+        3 => 10.0,
+        6 => 15.0,
+        12 => 20.0,
+    ];
+
+    $realService = app(CohortProjectionService::class);
+    $mock = Mockery::mock(CohortProjectionService::class);
+    $mock->shouldReceive('retentionCurve')
+        ->andReturn(['months' => $retentionCurve, 'cohorts_used' => 6, 'avg_cohort_size' => 50]);
+    $mock->shouldReceive('monthlyRetentionRate')
+        ->andReturnUsing(fn (int $age, array $curve) => $realService->monthlyRetentionRate($age, $curve));
+
+    app()->instance(CohortProjectionService::class, $mock);
+
+    $service = app(DemandForecastService::class);
+    $forecast = $service->forecastYear($scenario, 2026);
+
+    expect($forecast)->toHaveCount(12);
+
+    // Q2 months should have data driven by cohort retention
+    $aprilData = $forecast[4];
+    expect($aprilData)->not->toBeEmpty();
+
+    // Repeat revenue should be present — cohort model produces repeat from Q1 cohorts aging
+    $totalRepeatRevenue = 0;
+    for ($month = 4; $month <= 12; $month++) {
+        $monthRevenue = collect($forecast[$month])->sum('revenue');
+        $totalRepeatRevenue += $monthRevenue;
+    }
+
+    expect($totalRepeatRevenue)->toBeGreaterThan(0);
+});
+
+it('cohort and flat models produce different repeat revenue', function () {
+    $scenario = setupForecastScenario();
+
+    $retentionCurve = [
+        1 => 5.0,
+        2 => 8.0,
+        3 => 10.0,
+        6 => 15.0,
+        12 => 20.0,
+    ];
+
+    // Run with cohort model
+    $realService = app(CohortProjectionService::class);
+    $cohortMock = Mockery::mock(CohortProjectionService::class);
+    $cohortMock->shouldReceive('retentionCurve')
+        ->andReturn(['months' => $retentionCurve, 'cohorts_used' => 6, 'avg_cohort_size' => 50]);
+    $cohortMock->shouldReceive('monthlyRetentionRate')
+        ->andReturnUsing(fn (int $age, array $curve) => $realService->monthlyRetentionRate($age, $curve));
+
+    app()->instance(CohortProjectionService::class, $cohortMock);
+    $cohortForecast = app(DemandForecastService::class)->totalForecast($scenario, 2026);
+
+    // Run with flat model (empty curve)
+    $flatMock = Mockery::mock(CohortProjectionService::class);
+    $flatMock->shouldReceive('retentionCurve')
+        ->andReturn(['months' => [], 'cohorts_used' => 0, 'avg_cohort_size' => 0]);
+
+    app()->instance(CohortProjectionService::class, $flatMock);
+    $flatForecast = app(DemandForecastService::class)->totalForecast($scenario->fresh(), 2026);
+
+    // Both produce positive revenue
+    expect($cohortForecast['year_total']['revenue'])->toBeGreaterThan(0);
+    expect($flatForecast['year_total']['revenue'])->toBeGreaterThan(0);
+
+    // But different values — proves the model actually differs
+    expect($cohortForecast['year_total']['revenue'])
+        ->not->toBe($flatForecast['year_total']['revenue']);
+});
+
+it('curve adjustment scales cohort repeat revenue', function () {
+    $scenario = setupForecastScenario();
+
+    $retentionCurve = [
+        1 => 5.0,
+        2 => 8.0,
+        3 => 10.0,
+        6 => 15.0,
+        12 => 20.0,
+    ];
+
+    $realService = app(CohortProjectionService::class);
+
+    // Run with adjustment = 1.0
+    $scenario->update(['retention_curve_adjustment' => 1.00]);
+    $mock1 = Mockery::mock(CohortProjectionService::class);
+    $mock1->shouldReceive('retentionCurve')
+        ->andReturn(['months' => $retentionCurve, 'cohorts_used' => 6, 'avg_cohort_size' => 50]);
+    $mock1->shouldReceive('monthlyRetentionRate')
+        ->andReturnUsing(fn (int $age, array $curve) => $realService->monthlyRetentionRate($age, $curve));
+
+    app()->instance(CohortProjectionService::class, $mock1);
+    $baseRevenue = app(DemandForecastService::class)->totalForecast($scenario->fresh(), 2026)['year_total']['revenue'];
+
+    // Run with adjustment = 1.50 (optimistic)
+    $scenario->update(['retention_curve_adjustment' => 1.50]);
+    $mock2 = Mockery::mock(CohortProjectionService::class);
+    $mock2->shouldReceive('retentionCurve')
+        ->andReturn(['months' => $retentionCurve, 'cohorts_used' => 6, 'avg_cohort_size' => 50]);
+    $mock2->shouldReceive('monthlyRetentionRate')
+        ->andReturnUsing(fn (int $age, array $curve) => $realService->monthlyRetentionRate($age, $curve));
+
+    app()->instance(CohortProjectionService::class, $mock2);
+    $optimisticRevenue = app(DemandForecastService::class)->totalForecast($scenario->fresh(), 2026)['year_total']['revenue'];
+
+    // Optimistic should produce more revenue
+    expect($optimisticRevenue)->toBeGreaterThan($baseRevenue);
+});
+
+it('falls back to flat repeat model when no retention curve exists', function () {
+    $scenario = setupForecastScenario();
+
+    // Mock CohortProjectionService to return empty curve
+    $mock = Mockery::mock(CohortProjectionService::class);
+    $mock->shouldReceive('retentionCurve')
+        ->andReturn(['months' => [], 'cohorts_used' => 0, 'avg_cohort_size' => 0]);
+
+    app()->instance(CohortProjectionService::class, $mock);
+
+    $service = app(DemandForecastService::class);
+    $forecast = $service->forecastYear($scenario, 2026);
+
+    expect($forecast)->toHaveCount(12);
+
+    // Should still produce forecast data using flat model
+    expect($forecast[4])->not->toBeEmpty();
+
+    $totalRevenue = 0;
+    for ($month = 4; $month <= 12; $month++) {
+        $totalRevenue += collect($forecast[$month])->sum('revenue');
+    }
+
+    expect($totalRevenue)->toBeGreaterThan(0);
 });

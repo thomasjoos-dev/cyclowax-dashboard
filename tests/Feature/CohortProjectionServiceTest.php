@@ -36,6 +36,44 @@ it('projects cohort revenue based on retention curve', function () {
         ->and($projection[3]['cumulative_repeat_revenue'])->toBe(9500.00);
 });
 
+it('interpolates retention rate for missing months', function () {
+    $service = app(CohortProjectionService::class);
+
+    $curve = [
+        1 => 5.0,
+        3 => 10.0,
+        6 => 15.0,
+        12 => 20.0,
+    ];
+
+    // Exact match
+    expect($service->monthlyRetentionRate(1, $curve))->toBe(5.0);
+    expect($service->monthlyRetentionRate(3, $curve))->toBe(10.0);
+
+    // Interpolated: month 2 between 1→5.0 and 3→10.0
+    expect($service->monthlyRetentionRate(2, $curve))->toBe(7.5);
+
+    // Interpolated: month 4 between 3→10.0 and 6→15.0
+    expect($service->monthlyRetentionRate(4, $curve))->toBe(11.67);
+
+    // Interpolated: month 9 between 6→15.0 and 12→20.0
+    expect($service->monthlyRetentionRate(9, $curve))->toBe(17.5);
+
+    // After last point: plateau
+    expect($service->monthlyRetentionRate(15, $curve))->toBe(20.0);
+    expect($service->monthlyRetentionRate(24, $curve))->toBe(20.0);
+});
+
+it('returns zero retention for invalid month ages', function () {
+    $service = app(CohortProjectionService::class);
+
+    $curve = [1 => 5.0, 3 => 10.0];
+
+    expect($service->monthlyRetentionRate(0, $curve))->toBe(0.0);
+    expect($service->monthlyRetentionRate(-1, $curve))->toBe(0.0);
+    expect($service->monthlyRetentionRate(1, []))->toBe(0.0);
+});
+
 it('handles empty retention curve gracefully', function () {
     $service = app(CohortProjectionService::class);
 

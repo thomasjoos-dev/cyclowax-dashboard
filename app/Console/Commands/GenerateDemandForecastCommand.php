@@ -28,6 +28,14 @@ class GenerateDemandForecastCommand extends Command
 
         $this->info("Generating demand forecast: {$scenario->label} ({$year})...");
 
+        // Show repeat model info
+        $modelInfo = $forecastService->repeatModelInfo($scenario);
+        if ($modelInfo['model'] === 'cohort') {
+            $this->info("Repeat model: cohort-based ({$modelInfo['cohorts_used']} cohorts, curve adjustment: {$modelInfo['curve_adjustment']})");
+        } else {
+            $this->warn('Repeat model: flat (no retention data available)');
+        }
+
         $total = $forecastService->totalForecast($scenario, $year);
 
         // Display monthly summary
