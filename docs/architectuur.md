@@ -117,6 +117,12 @@ Demand Forecast System
   │     │     ├── validateProductMixes() — shares in [0,1], som per type 0.95–1.05
   │     │     ├── Q1 completeness check — exception bij 0 maanden, warning bij <3
   │     │     ├── baseline (vorig jaar) × scenario growth × product mix × seasonal index
+  │     │     ├── Repeat model: cohort-based (primair) of flat (fallback)
+  │     │     │     ├── Cohort: per maand door alle eerdere cohorten, incrementele retentie via curve delta
+  │     │     │     ├── CohortProjectionService.retentionCurve() → historische retention %
+  │     │     │     ├── monthlyRetentionRate() — lineaire interpolatie tussen bekende datapunten
+  │     │     │     ├── Scenario.retention_curve_adjustment — scalar (0.50–1.50) om curve te schalen
+  │     │     │     └── Flat fallback: cumulativeCustomers × repeat_rate / 3 (als geen curve beschikbaar)
   │     │     ├── + DemandEvent boost (geplande campagnes/launches)
   │     │     ├── - Pull-forward deductie (alleen Getting Started categorieën)
   │     │     └── → units + revenue per ProductCategory per maand
@@ -137,10 +143,44 @@ Demand Forecast System
   Input Validation
   ├── InvalidProductMixException — shares buiten bereik of som buiten 0.95–1.05
   ├── InsufficientBaselineException — geen Q1 actuals beschikbaar
-  ├── Stock freshness check — ProductionScheduleService::stockFreshness() > 48u = stale
+  ├── Stock freshness check — ComponentNettingService::stockFreshness() > 48u = stale
   ├── Supply profile validation — validated_at/validated_by velden, warning bij unvalidated
   └── ValidateBomCommand (forecast:validate-bom)
         └── Controleert: orphan BOMs, lege explosies, ontbrekende lead times, producten zonder BOM
+
+  Purchase & Production Calendar
+  └── GeneratePurchaseCalendarCommand (forecast:purchase-calendar {scenario})
+        └── PurchaseCalendarService (orchestrator)
+              ├── Phase 1: demand forecast → SKU mix → BOM explosion per categorie
+              ├── Phase 2: aggregeer component demand over alle categorieën → 1× netten
+              │     └── ComponentNettingService.net() — stock + open PO aftrek
+              ├── Phase 3: split netting pro-rata terug per categorie (voor rapportage)
+              ├── Phase 4: monthly timelines per categorie (12 needDates, einde elke maand)
+              │     └── ProductionTimelineService.timeline() — backwards scheduling
+              │           ├── BOM explosion → leaf components + intermediates
+              │           ├── Purchase + receipt events (lead time gebaseerd)
+              │           └── Production events — intermediates genetted tegen voorraad
+              └── Deduplicatie + chronologische sortering
+
+  ComponentNettingService (extracted uit voormalig ProductionScheduleService)
+  ├── net() — dag-0 netting: gross need - stock - open PO (voor per-maand timelines)
+  ├── rollingNet() — maand-voor-maand stock simulatie met PO arrivals per date_planned
+  ├── netIntermediateDemand() — gross need - stock = net need (per intermediate product)
+  ├── stockFreshness() — data quality check op stock snapshots
+  ├── getCurrentStockByProduct() — instance-cached stock lookup
+  ├── getOpenPoQtyByProduct() — instance-cached open PO aggregatie
+  └── clearCache() — reset voor multi-scenario of test-doeleinden
+
+  Netting architectuur:
+  ├── Rolling netting: maand-voor-maand stock simulatie i.p.v. dag-0 snapshot
+  │     ├── running_stock += PO arrivals (per date_planned maand) - demand
+  │     ├── Shortfall detectie per maand → first_shortfall_month voor urgentie
+  │     └── Open POs van andere jaren worden genegeerd
+  ├── Shared components: demand eerst geaggregeerd over alle categorieën, dan 1× genetted
+  ├── Intermediate netting: tussenproducten (normal BOMs) genetted tegen voorraad vóór productieorders
+  ├── Monthly granulariteit: 12 needDates per jaar i.p.v. 4 quarters
+  ├── Instance cache (niet static): veilig voor meerdere scenario's in dezelfde request
+  └── Pro-rata split: netting resultaat terug verdeeld per categorie op basis van bruto aandeel
 
   Supply Profile Analysis
   └── SyncSupplyProfilesCommand (forecast:sync-supply-profiles)
@@ -201,7 +241,9 @@ app/Services/
 │                  GoalService, StockForecastService, SeasonalIndexCalculator,
 │                  CategorySeasonalCalculator, DemandForecastService,
 │                  DemandEventService, ForecastTrackingService, StockPlanningService,
-│                  SupplyProfileAnalyzer
+│                  SupplyProfileAnalyzer, ComponentNettingService,
+│                  ProductionTimelineService, BomExplosionService,
+│                  SkuMixService, PurchaseCalendarService
 ├── Scoring/       RfmScoringService, FollowerScorer, ChannelClassificationService,
 │                  ProductClassifier, SuspectProfileFlagger, SegmentTransitionLogger,
 │                  OrderMarginCalculator

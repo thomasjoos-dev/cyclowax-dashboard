@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Scenario;
 use App\Models\SupplyProfile;
-use App\Services\Forecast\ProductionScheduleService;
+use App\Services\Forecast\ComponentNettingService;
 use App\Services\Forecast\PurchaseCalendarService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -14,7 +14,7 @@ use Illuminate\Console\Command;
 #[Description('Generate purchase + production calendar based on demand forecast, BOM explosion and stock netting')]
 class GeneratePurchaseCalendarCommand extends Command
 {
-    public function handle(PurchaseCalendarService $calendarService, ProductionScheduleService $productionSchedule): int
+    public function handle(PurchaseCalendarService $calendarService, ComponentNettingService $netting): int
     {
         $scenarioName = $this->argument('scenario');
         $year = (int) ($this->option('year') ?? now()->year);
@@ -28,7 +28,7 @@ class GeneratePurchaseCalendarCommand extends Command
         }
 
         // Data quality warnings
-        $this->checkStockFreshness($productionSchedule);
+        $this->checkStockFreshness($netting);
         $this->checkSupplyProfileValidation();
 
         $this->info("Generating purchase + production calendar: {$scenario->label} ({$year})...");
@@ -58,21 +58,27 @@ class GeneratePurchaseCalendarCommand extends Command
                     continue;
                 }
 
+                $shortfallMonth = $comp['first_shortfall_month'] ?? null;
+                $shortfallLabel = $shortfallMonth
+                    ? date('M', mktime(0, 0, 0, $shortfallMonth, 1))
+                    : '-';
+
                 $nettingRows[] = [
                     $category,
                     $comp['sku'],
-                    substr($comp['name'], 0, 35),
+                    substr($comp['name'], 0, 30),
                     number_format($comp['gross_need']),
                     number_format($comp['stock_available']),
                     number_format($comp['open_po_qty']),
                     number_format($comp['net_need']),
+                    $shortfallLabel,
                     $comp['net_need'] > 0 ? 'ORDER' : 'OK',
                 ];
             }
         }
 
         $this->table(
-            ['Category', 'SKU', 'Product', 'Gross Need', 'Stock', 'Open PO', 'Net Need', 'Status'],
+            ['Category', 'SKU', 'Product', 'Gross Need', 'Stock', 'Open PO', 'Net Need', '1st Short', 'Status'],
             $nettingRows,
         );
 
@@ -98,13 +104,13 @@ class GeneratePurchaseCalendarCommand extends Command
                 substr($event['name'], 0, 35),
                 number_format($event['quantity']),
                 $event['supplier'] ?? '-',
-                $event['quarter'] ?? '-',
+                $event['month'] ?? '-',
                 substr($event['note'] ?? '', 0, 45),
             ];
         }
 
         $this->table(
-            ['Date', 'Type', 'SKU', 'Product', 'Qty', 'Supplier', 'Quarter', 'Note'],
+            ['Date', 'Type', 'SKU', 'Product', 'Qty', 'Supplier', 'Month', 'Note'],
             $timelineRows,
         );
 
@@ -116,9 +122,9 @@ class GeneratePurchaseCalendarCommand extends Command
         return self::SUCCESS;
     }
 
-    private function checkStockFreshness(ProductionScheduleService $productionSchedule): void
+    private function checkStockFreshness(ComponentNettingService $netting): void
     {
-        $freshness = $productionSchedule->stockFreshness();
+        $freshness = $netting->stockFreshness();
 
         if ($freshness['latest_at'] === null) {
             $this->warn('⚠ No stock snapshots found. Run odoo:sync-products first.');
@@ -158,7 +164,7 @@ class GeneratePurchaseCalendarCommand extends Command
         fwrite($fp, "\xEF\xBB\xBF"); // UTF-8 BOM
 
         // Timeline sheet
-        $headers = ['Date', 'Event Type', 'SKU', 'Product', 'Quantity', 'Gross Qty', 'Net Qty', 'Supplier', 'Category', 'Quarter', 'Scenario', 'Note'];
+        $headers = ['Date', 'Event Type', 'SKU', 'Product', 'Quantity', 'Gross Qty', 'Net Qty', 'Supplier', 'Category', 'Month', 'Scenario', 'Note'];
         fwrite($fp, implode(';', $headers)."\n");
 
         foreach ($result['timeline'] as $event) {
@@ -172,7 +178,7 @@ class GeneratePurchaseCalendarCommand extends Command
                 $event['net_quantity'] ?? '',
                 '"'.str_replace('"', '""', $event['supplier'] ?? '').'"',
                 $event['category'] ?? '',
-                $event['quarter'] ?? '',
+                $event['month'] ?? '',
                 $event['scenario'] ?? '',
                 '"'.str_replace('"', '""', $event['note'] ?? '').'"',
             ];

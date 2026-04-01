@@ -12,13 +12,14 @@ class PurchaseCalendarService
         private DemandForecastService $demandForecast,
         private SkuMixService $skuMix,
         private BomExplosionService $bomExplosion,
-        private ProductionScheduleService $productionSchedule,
+        private ProductionTimelineService $productionTimeline,
+        private ComponentNettingService $netting,
     ) {}
 
     /**
      * Generate a full purchase + production calendar for a scenario year.
      *
-     * Flow: demand forecast → SKU mix → BOM explosion → netting → production schedule → merged timeline.
+     * Flow: demand forecast → SKU mix → BOM explosion → cross-category aggregation → single netting pass → timeline.
      *
      * @return array{timeline: array<int, array>, summary: array, sku_mix: array, component_demand: array, netting: array}
      */
@@ -30,13 +31,16 @@ class PurchaseCalendarService
         $allTimelines = [];
         $allSkuMixes = [];
         $allComponentDemand = [];
-        $allNetting = [];
+        $categoryDemandMap = []; // category => [product_id => component data]
+        $categorySkuDistributions = []; // category => [product_id => qty]
+        $categoryMonthlyUnits = []; // category => [month => units]
+        $categoryYearlyUnits = []; // category => yearly total
 
         $forecastableCategories = collect(ProductCategory::cases())
             ->filter(fn (ProductCategory $cat) => $cat->forecastGroup() !== null);
 
+        // Phase 1: Collect demand per category and BOM-explode to components
         foreach ($forecastableCategories as $category) {
-            // Aggregate yearly demand for this category
             $yearlyUnits = 0;
             $monthlyUnits = [];
 
@@ -51,7 +55,6 @@ class PurchaseCalendarService
                 continue;
             }
 
-            // SKU mix: distribute across individual products
             $skuDistribution = $this->skuMix->distribute($category, $yearlyUnits);
 
             if (empty($skuDistribution)) {
@@ -61,51 +64,72 @@ class PurchaseCalendarService
             $skuDetails = $this->skuMix->mixWithDetails($category);
             $allSkuMixes[$category->value] = $skuDetails;
 
-            // Component demand per category (aggregated across all SKUs)
             $componentDemand = $this->bomExplosion->componentDemand($skuDistribution);
             $allComponentDemand[$category->value] = $componentDemand;
 
-            // Netting
-            $netted = $this->productionSchedule->netComponentDemand($componentDemand);
-            $allNetting[$category->value] = $netted;
+            $categoryDemandMap[$category->value] = $componentDemand;
+            $categorySkuDistributions[$category->value] = $skuDistribution;
+            $categoryMonthlyUnits[$category->value] = $monthlyUnits;
+            $categoryYearlyUnits[$category->value] = $yearlyUnits;
+        }
 
-            // Generate quarterly timelines (purchase decisions are typically quarterly)
-            $quarterNeedDates = [
-                "{$year}-03-31", // Q1 need date
-                "{$year}-06-30", // Q2 need date
-                "{$year}-09-30", // Q3 need date
-                "{$year}-12-31", // Q4 need date
-            ];
+        // Phase 2: Build monthly component demand across all categories, then rolling-net
+        $monthlyComponentDemand = $this->buildMonthlyComponentDemand(
+            $categorySkuDistributions,
+            $categoryMonthlyUnits,
+            $categoryYearlyUnits,
+        );
+        $componentMeta = $this->buildComponentMeta($categoryDemandMap);
+        $globalNetting = $this->netting->rollingNet($monthlyComponentDemand, $componentMeta, $year);
 
-            foreach ($quarterNeedDates as $qi => $needDate) {
-                $quarterMonths = [($qi * 3) + 1, ($qi * 3) + 2, ($qi * 3) + 3];
-                $quarterUnits = array_sum(array_map(fn ($m) => $monthlyUnits[$m] ?? 0, $quarterMonths));
+        // Build a lookup of net results by product_id for per-category reporting
+        $nettingByProduct = [];
+        foreach ($globalNetting as $netted) {
+            $nettingByProduct[$netted['product_id']] = $netted;
+        }
 
-                if ($quarterUnits <= 0) {
+        // Phase 3: Split netting results back per category (pro-rata by gross need)
+        $allNetting = $this->splitNettingByCategory($categoryDemandMap, $nettingByProduct);
+
+        // Phase 4: Generate monthly timelines per category
+        foreach ($categorySkuDistributions as $categoryValue => $skuDistribution) {
+            $yearlyUnits = $categoryYearlyUnits[$categoryValue];
+            $monthlyUnits = $categoryMonthlyUnits[$categoryValue];
+            $category = ProductCategory::from($categoryValue);
+
+            for ($month = 1; $month <= 12; $month++) {
+                $units = $monthlyUnits[$month] ?? 0;
+
+                if ($units <= 0) {
                     continue;
                 }
 
-                // Distribute quarterly demand across SKUs proportionally
-                $quarterSkuQty = [];
+                // Need date = last day of the month
+                $needDate = date('Y-m-t', strtotime("{$year}-".str_pad($month, 2, '0', STR_PAD_LEFT).'-01'));
+
+                // Distribute monthly demand across SKUs proportionally
+                $monthSkuQty = [];
                 foreach ($skuDistribution as $productId => $yearQty) {
                     $ratio = $yearQty / $yearlyUnits;
-                    $qQty = (int) ceil($quarterUnits * $ratio);
+                    $mQty = (int) ceil($units * $ratio);
 
-                    if ($qQty > 0) {
-                        $quarterSkuQty[$productId] = $qQty;
+                    if ($mQty > 0) {
+                        $monthSkuQty[$productId] = $mQty;
                     }
                 }
 
-                $quarterTimeline = $this->productionSchedule->timeline($quarterSkuQty, $needDate);
+                $monthTimeline = $this->productionTimeline->timeline($monthSkuQty, $needDate);
 
-                foreach ($quarterTimeline as &$event) {
+                $monthLabel = date('M', strtotime("{$year}-".str_pad($month, 2, '0', STR_PAD_LEFT).'-01'));
+
+                foreach ($monthTimeline as &$event) {
                     $event['category'] = $category->value;
-                    $event['quarter'] = 'Q'.($qi + 1);
+                    $event['month'] = $monthLabel;
                     $event['scenario'] = $scenario->name;
                 }
                 unset($event);
 
-                $allTimelines = array_merge($allTimelines, $quarterTimeline);
+                $allTimelines = array_merge($allTimelines, $monthTimeline);
             }
         }
 
@@ -121,7 +145,6 @@ class PurchaseCalendarService
             return ($order[$a['event_type']] ?? 5) <=> ($order[$b['event_type']] ?? 5);
         });
 
-        // Deduplicate: merge purchase events for same product + same date
         $allTimelines = $this->deduplicateEvents($allTimelines);
 
         return [
@@ -131,6 +154,128 @@ class PurchaseCalendarService
             'component_demand' => $allComponentDemand,
             'netting' => $allNetting,
         ];
+    }
+
+    /**
+     * Build monthly component demand aggregated across all categories.
+     *
+     * For each component, calculates how much is needed per month by distributing
+     * the monthly category demand through SKU mix and BOM explosion ratios.
+     *
+     * @return array<int, array<int, float>> [product_id => [month => demand]]
+     */
+    private function buildMonthlyComponentDemand(
+        array $categorySkuDistributions,
+        array $categoryMonthlyUnits,
+        array $categoryYearlyUnits,
+    ): array {
+        $monthlyDemand = [];
+
+        foreach ($categorySkuDistributions as $categoryValue => $skuDistribution) {
+            $yearlyUnits = $categoryYearlyUnits[$categoryValue];
+            $monthlyUnits = $categoryMonthlyUnits[$categoryValue];
+
+            if ($yearlyUnits <= 0) {
+                continue;
+            }
+
+            // Get component ratios from yearly BOM explosion
+            $yearlyComponents = $this->bomExplosion->componentDemand($skuDistribution);
+
+            foreach ($yearlyComponents as $comp) {
+                $pid = $comp['product_id'];
+                // Ratio: how much of this component per unit of category demand
+                $componentPerUnit = $comp['total_quantity'] / $yearlyUnits;
+
+                for ($m = 1; $m <= 12; $m++) {
+                    $units = $monthlyUnits[$m] ?? 0;
+                    $monthDemand = $units * $componentPerUnit;
+
+                    if ($monthDemand > 0) {
+                        $monthlyDemand[$pid][$m] = ($monthlyDemand[$pid][$m] ?? 0) + $monthDemand;
+                    }
+                }
+            }
+        }
+
+        return $monthlyDemand;
+    }
+
+    /**
+     * Build component metadata lookup from category demand map.
+     *
+     * @return array<int, array{sku: string, name: string, procurement_lt: int|null}>
+     */
+    private function buildComponentMeta(array $categoryDemandMap): array
+    {
+        $meta = [];
+
+        foreach ($categoryDemandMap as $components) {
+            foreach ($components as $comp) {
+                $pid = $comp['product_id'];
+                if (! isset($meta[$pid])) {
+                    $meta[$pid] = [
+                        'sku' => $comp['sku'],
+                        'name' => $comp['name'],
+                        'procurement_lt' => $comp['procurement_lt'],
+                    ];
+                }
+            }
+        }
+
+        return $meta;
+    }
+
+    /**
+     * Split global netting results back per category, pro-rata by gross need.
+     *
+     * Each category sees the full stock/open PO coverage, but net_need is
+     * distributed proportionally to how much of the gross demand came from
+     * that category.
+     *
+     * @param  array<string, array>  $categoryDemandMap
+     * @param  array<int, array>  $nettingByProduct
+     * @return array<string, array>
+     */
+    private function splitNettingByCategory(array $categoryDemandMap, array $nettingByProduct): array
+    {
+        $result = [];
+
+        foreach ($categoryDemandMap as $category => $components) {
+            $categoryNetting = [];
+
+            foreach ($components as $comp) {
+                $pid = $comp['product_id'];
+                $global = $nettingByProduct[$pid] ?? null;
+
+                if (! $global) {
+                    continue;
+                }
+
+                $categoryGross = $comp['total_quantity'];
+                $totalGross = $global['gross_need'];
+
+                // Pro-rata share of this category's contribution to net need
+                $ratio = $totalGross > 0 ? $categoryGross / $totalGross : 0;
+                $categoryNetNeed = round($global['net_need'] * $ratio, 2);
+
+                $categoryNetting[] = [
+                    'product_id' => $pid,
+                    'sku' => $comp['sku'],
+                    'name' => $comp['name'],
+                    'gross_need' => $categoryGross,
+                    'stock_available' => $global['stock_available'],
+                    'open_po_qty' => $global['open_po_total'] ?? 0,
+                    'net_need' => $categoryNetNeed,
+                    'procurement_lt' => $comp['procurement_lt'],
+                    'first_shortfall_month' => $global['first_shortfall_month'] ?? null,
+                ];
+            }
+
+            $result[$category] = $categoryNetting;
+        }
+
+        return $result;
     }
 
     /**
