@@ -17,7 +17,9 @@ class KlaviyoProfileSyncer
 
     public function __construct(
         protected KlaviyoClient $klaviyo,
-    ) {}
+    ) {
+        $this->timeBudgetSeconds = config('klaviyo.time_budget.profiles', 210);
+    }
 
     /**
      * Sync profiles from Klaviyo, including predictive analytics.

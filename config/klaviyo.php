@@ -26,4 +26,21 @@ return [
 
     'revision' => env('KLAVIYO_API_REVISION', '2024-10-15'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Time Budgets (seconds)
+    |--------------------------------------------------------------------------
+    |
+    | Maximum execution time per syncer before pausing and saving cursor.
+    | Campaigns default to 900s because enrichment is rate-limited (2 req/min)
+    | and the time is spent sleeping, not consuming CPU or memory.
+    |
+    */
+
+    'time_budget' => [
+        'profiles' => (int) env('KLAVIYO_TIME_BUDGET_PROFILES', 210),
+        'campaigns' => (int) env('KLAVIYO_TIME_BUDGET_CAMPAIGNS', 900),
+        'engagement' => (int) env('KLAVIYO_TIME_BUDGET_ENGAGEMENT', 210),
+    ],
+
 ];

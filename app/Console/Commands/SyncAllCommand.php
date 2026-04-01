@@ -8,11 +8,12 @@ use Carbon\CarbonImmutable;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Process\Pool;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
-#[Signature('sync:all {--full : Force full sync for all steps, bypassing incremental logic}')]
+#[Signature('sync:all {--full : Force full sync for all steps, bypassing incremental logic} {--skip-enrichment : Skip Klaviyo campaign metrics enrichment}')]
 #[Description('Run the full daily sync pipeline: Shopify → Odoo → Klaviyo → margins → RFM → profiles')]
 class SyncAllCommand extends Command
 {
@@ -30,8 +31,24 @@ class SyncAllCommand extends Command
         'klaviyo:sync-engagement',
     ];
 
+    /** Steps that run in parallel as a single pipeline step */
+    private const PARALLEL_GROUPS = [
+        'odoo:parallel' => [
+            ['odoo:sync-products', 'Odoo product sync'],
+            ['odoo:sync-shipping-costs', 'Odoo shipping cost sync'],
+            ['odoo:sync-boms', 'Odoo BOM sync'],
+            ['odoo:sync-open-pos', 'Odoo open PO sync'],
+        ],
+    ];
+
     public function handle(): int
     {
+        if (! $this->validateCredentials()) {
+            return self::FAILURE;
+        }
+
+        $this->resetStaleSyncStates();
+
         $pipelineStart = microtime(true);
         $isFull = (bool) $this->option('full');
 
@@ -39,10 +56,7 @@ class SyncAllCommand extends Command
 
         $steps = [
             ['shopify:sync-orders', 'Shopify order sync'],
-            ['odoo:sync-products', 'Odoo product sync'],
-            ['odoo:sync-shipping-costs', 'Odoo shipping cost sync'],
-            ['odoo:sync-boms', 'Odoo BOM sync'],
-            ['odoo:sync-open-pos', 'Odoo open PO sync'],
+            ['odoo:parallel', 'Odoo parallel sync'],
             ['klaviyo:sync-profiles', 'Klaviyo profile sync'],
             ['klaviyo:sync-campaigns', 'Klaviyo campaign sync'],
             ['orders:compute-margins', 'Margin computation'],
@@ -59,6 +73,26 @@ class SyncAllCommand extends Command
         $needsMoreRuns = false;
 
         foreach ($steps as [$command, $label]) {
+            // Parallel groups: run simultaneously when resources allow, otherwise sequential
+            if (isset(self::PARALLEL_GROUPS[$command])) {
+                if ($this->canRunParallel()) {
+                    $this->runParallelSteps(self::PARALLEL_GROUPS[$command], $label, $isFull, $failures);
+                } else {
+                    $this->components->info("[{$label}] Running sequentially (limited resources).");
+                    foreach (self::PARALLEL_GROUPS[$command] as [$subCommand, $subLabel]) {
+                        $this->runStep($subCommand, $subLabel, $isFull, $failures);
+                        if ($failures > 0) {
+                            break;
+                        }
+                    }
+                }
+                if ($failures > 0) {
+                    break;
+                }
+
+                continue;
+            }
+
             // Skip steps that completed during this pipeline cycle
             if ($this->isRecentlyCompleted($command, $pipelineStart)) {
                 $this->components->info("[{$label}] Already completed this cycle, skipping.");
@@ -124,6 +158,9 @@ class SyncAllCommand extends Command
         if ($isFull && in_array($command, self::FULL_SYNC_COMMANDS)) {
             $artisanCommand .= ' --full';
         }
+        if ($this->option('skip-enrichment') && $command === 'klaviyo:sync-campaigns') {
+            $artisanCommand .= ' --skip-enrichment';
+        }
 
         $result = Process::timeout(900)->run($artisanCommand);
         $duration = round(microtime(true) - $start, 1);
@@ -160,6 +197,134 @@ class SyncAllCommand extends Command
         // Clean up parent process memory between steps
         DB::connection()->flushQueryLog();
         gc_collect_cycles();
+    }
+
+    /**
+     * Check if the environment has enough resources to run parallel processes.
+     * Requires at least 2GB of system memory to safely spawn multiple PHP subprocesses.
+     */
+    protected function canRunParallel(): bool
+    {
+        if (PHP_OS_FAMILY !== 'Linux' && PHP_OS_FAMILY !== 'Darwin') {
+            return false;
+        }
+
+        // On Linux (Cloud): read from /proc/meminfo
+        if (PHP_OS_FAMILY === 'Linux' && is_readable('/proc/meminfo')) {
+            $meminfo = file_get_contents('/proc/meminfo');
+            if (preg_match('/MemTotal:\s+(\d+)\s+kB/', $meminfo, $matches)) {
+                $totalMb = (int) $matches[1] / 1024;
+
+                return $totalMb >= 2048;
+            }
+        }
+
+        // On macOS (local dev): always allow parallel
+        return PHP_OS_FAMILY === 'Darwin';
+    }
+
+    /**
+     * Run multiple pipeline steps in parallel using a process pool.
+     *
+     * @param  array<int, array{0: string, 1: string}>  $commands
+     */
+    protected function runParallelSteps(array $commands, string $label, bool $isFull, int &$failures): void
+    {
+        $this->newLine();
+        $this->components->info("[{$label}]");
+
+        $start = microtime(true);
+
+        $pool = Process::pool(function (Pool $pool) use ($commands, $isFull) {
+            foreach ($commands as [$command, $sublabel]) {
+                $artisanCommand = 'php artisan '.$command;
+                if ($isFull && in_array($command, self::FULL_SYNC_COMMANDS)) {
+                    $artisanCommand .= ' --full';
+                }
+                $pool->as($command)->timeout(900)->command($artisanCommand);
+            }
+        })->start()->wait();
+
+        $duration = round(microtime(true) - $start, 1);
+
+        foreach ($commands as [$command, $sublabel]) {
+            $result = $pool[$command];
+
+            $output = trim($result->output());
+            if ($output !== '') {
+                $this->line($output);
+            }
+
+            if (! $result->successful()) {
+                $this->components->error("{$sublabel} failed (exit code {$result->exitCode()}).");
+
+                $errorOutput = trim($result->errorOutput());
+                if ($errorOutput !== '') {
+                    $this->line($errorOutput);
+                }
+
+                Log::error("Sync step failed: {$sublabel}", [
+                    'command' => $command,
+                    'exit_code' => $result->exitCode(),
+                    'error' => $errorOutput,
+                ]);
+                $failures++;
+            } else {
+                SyncState::markCompleted($command, $duration, 0, $isFull);
+                $this->components->info("{$sublabel} completed.");
+            }
+        }
+
+        $this->components->info("{$label} finished in {$duration}s.");
+
+        DB::connection()->flushQueryLog();
+        gc_collect_cycles();
+    }
+
+    /**
+     * Verify that all required external service credentials are configured.
+     */
+    protected function validateCredentials(): bool
+    {
+        $missing = [];
+
+        if (! config('shopify.store') || ! config('shopify.access_token')) {
+            $missing[] = 'Shopify (SHOPIFY_STORE, SHOPIFY_ACCESS_TOKEN)';
+        }
+
+        if (! config('odoo.url') || ! config('odoo.api_key')) {
+            $missing[] = 'Odoo (ODOO_URL, ODOO_API_KEY)';
+        }
+
+        if (! config('klaviyo.api_key')) {
+            $missing[] = 'Klaviyo (KLAVIYO_API_KEY)';
+        }
+
+        if (! empty($missing)) {
+            foreach ($missing as $service) {
+                $this->components->error("Missing credentials: {$service}");
+            }
+
+            Log::error('Sync pipeline aborted: missing credentials', ['missing' => $missing]);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Reset sync states that are stuck in "running" beyond the stale threshold.
+     */
+    protected function resetStaleSyncStates(): void
+    {
+        foreach (self::CURSOR_AWARE_COMMANDS as $command) {
+            if (SyncState::isStale($command)) {
+                SyncState::updateOrCreate(['step' => $command], ['status' => 'idle', 'cursor' => null]);
+                Log::warning("Reset stale sync state for {$command}");
+                $this->components->warn("Reset stale state: {$command}");
+            }
+        }
     }
 
     /**

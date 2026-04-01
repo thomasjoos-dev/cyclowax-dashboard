@@ -28,7 +28,9 @@ class KlaviyoEngagementSyncer
 
     public function __construct(
         protected KlaviyoClient $klaviyo,
-    ) {}
+    ) {
+        $this->timeBudgetSeconds = config('klaviyo.time_budget.engagement', 210);
+    }
 
     /**
      * Sync engagement event counts from Klaviyo.

@@ -278,11 +278,24 @@ Alle API list-endpoints gebruiken FormRequests (`App\Http\Requests\Api\V1\*`):
 **Process-geïsoleerde pipeline:** Elke sync-stap draait als apart PHP-proces via
 `Process::run()`. Hierdoor wordt geheugen na elke stap volledig vrijgegeven door het OS,
 wat de pipeline geschikt maakt voor geheugen-gelimiteerde omgevingen (staging: 1 GB).
+Odoo stappen (products, shipping-costs, boms, open-pos) draaien parallel via `Process::pool()`
+wanneer het systeem ≥2 GB RAM heeft; op kleinere instances (staging: 1 GB) serieel.
 
-**Resumable sync architectuur:** Elke sync-stap heeft een time- én memory budget
-(via `HasTimeBudget` trait: 3,5 min / 80% memory_limit). Stappen die niet binnen het
-budget passen slaan een cursor op in `sync_states` en hervatten bij de volgende run.
+**Resumable sync architectuur:** Elke sync-stap heeft een configureerbaar time- én memory budget
+(via `HasTimeBudget` trait, defaults in `config/klaviyo.php`: profiles 210s, campaigns 900s,
+engagement 210s, memory threshold 80%). Stappen die niet binnen het budget passen slaan een
+cursor op in `sync_states` en hervatten bij de volgende run.
 `SyncAllCommand` skipt afgeronde stappen en stopt bij de eerste incomplete stap.
+
+**Campaign enrichment:** Metrics enrichment via de Klaviyo Reporting API (2 req/min rate limit)
+draait als apart scheduled command (`klaviyo:enrich-campaigns`, elk uur, max 20 per run).
+De dagelijkse pipeline draait met `--skip-enrichment` zodat enrichment de pipeline niet blokkeert.
+
+**Pipeline safeguards:**
+- Credential validatie bij pipeline start — faalt direct als Shopify, Odoo of Klaviyo config ontbreekt
+- Stale state auto-reset — detecteert en reset crashed cursor-aware commands (>6 min in `running` status)
+- `sync:reset-cursor` artisan command voor handmatige cursor reset per stap of `--all`
+
 Alle writes zijn idempotent (upsert). Query logging is uitgeschakeld in alle syncers.
 
 0. **Klaviyo profiles** (`klaviyo:sync-profiles`)

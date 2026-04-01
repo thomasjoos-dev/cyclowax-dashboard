@@ -9,7 +9,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-#[Signature('klaviyo:sync-campaigns {--full : Bypass incremental sync and fetch all campaigns}')]
+#[Signature('klaviyo:sync-campaigns {--full : Bypass incremental sync and fetch all campaigns} {--skip-enrichment : Skip metrics enrichment for sent campaigns}')]
 #[Description('Sync email campaigns and metrics from the Klaviyo API')]
 class KlaviyoSyncCampaignsCommand extends Command
 {
@@ -32,7 +32,7 @@ class KlaviyoSyncCampaignsCommand extends Command
         $start = microtime(true);
 
         try {
-            $result = $syncer->sync($since);
+            $result = $syncer->sync($since, skipEnrichment: (bool) $this->option('skip-enrichment'));
             $duration = round(microtime(true) - $start, 1);
 
             if ($result['complete']) {

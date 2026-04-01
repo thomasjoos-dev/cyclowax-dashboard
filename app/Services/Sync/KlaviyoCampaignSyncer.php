@@ -21,7 +21,9 @@ class KlaviyoCampaignSyncer
 
     public function __construct(
         protected KlaviyoClient $klaviyo,
-    ) {}
+    ) {
+        $this->timeBudgetSeconds = config('klaviyo.time_budget.campaigns', 900);
+    }
 
     /**
      * Sync email campaigns from Klaviyo, then enrich sent campaigns with metrics.
@@ -29,20 +31,22 @@ class KlaviyoCampaignSyncer
      *
      * @return array{count: int, complete: bool}
      */
-    public function sync(?CarbonImmutable $since = null): array
+    public function sync(?CarbonImmutable $since = null, bool $skipEnrichment = false): array
     {
         $this->syncedCount = 0;
         $this->since = $since;
         $this->startTimeBudget();
         DB::connection()->disableQueryLog();
 
-        Log::info('Klaviyo campaign sync starting', ['incremental' => $since !== null]);
+        Log::info('Klaviyo campaign sync starting', ['incremental' => $since !== null, 'skip_enrichment' => $skipEnrichment]);
 
         $this->syncCampaigns();
 
         $enrichmentComplete = true;
 
-        if ($this->hasTimeRemaining()) {
+        if ($skipEnrichment) {
+            Log::info('Campaign enrichment skipped (--skip-enrichment flag)');
+        } elseif ($this->hasTimeRemaining()) {
             $enrichmentComplete = $this->enrichSentCampaignsWithMetrics();
         } else {
             $enrichmentComplete = false;
@@ -54,7 +58,7 @@ class KlaviyoCampaignSyncer
 
         return [
             'count' => $this->syncedCount,
-            'complete' => $enrichmentComplete,
+            'complete' => $skipEnrichment || $enrichmentComplete,
         ];
     }
 
@@ -133,6 +137,56 @@ class KlaviyoCampaignSyncer
         }
 
         return true;
+    }
+
+    /**
+     * Enrich a limited batch of sent campaigns with metrics.
+     * Designed to run independently from the sync pipeline.
+     *
+     * @return array{enriched: int, remaining: int}
+     */
+    public function enrichCampaigns(int $limit = 20): array
+    {
+        DB::connection()->disableQueryLog();
+
+        $campaigns = KlaviyoCampaign::query()
+            ->whereRaw('LOWER(status) = ?', ['sent'])
+            ->where('recipients', 0)
+            ->limit($limit)
+            ->get();
+
+        if ($campaigns->isEmpty()) {
+            return ['enriched' => 0, 'remaining' => 0];
+        }
+
+        $this->placedOrderMetricId = $this->resolvePlacedOrderMetricId();
+
+        if (! $this->placedOrderMetricId) {
+            Log::warning('Could not find Placed Order metric ID — skipping enrichment');
+
+            return ['enriched' => 0, 'remaining' => $campaigns->count()];
+        }
+
+        Log::info('Enriching campaigns batch', ['count' => $campaigns->count()]);
+
+        $enriched = 0;
+
+        foreach ($campaigns as $campaign) {
+            $this->fetchAndStoreMetrics($campaign);
+            $enriched++;
+
+            // Reporting API rate limit: 2 requests/min steady state
+            sleep(31);
+        }
+
+        $remaining = KlaviyoCampaign::query()
+            ->whereRaw('LOWER(status) = ?', ['sent'])
+            ->where('recipients', 0)
+            ->count();
+
+        Log::info('Campaign enrichment batch done', ['enriched' => $enriched, 'remaining' => $remaining]);
+
+        return ['enriched' => $enriched, 'remaining' => $remaining];
     }
 
     /**
