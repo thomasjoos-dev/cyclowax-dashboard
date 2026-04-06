@@ -5,6 +5,7 @@ namespace App\Services\Forecast\Demand;
 use App\Enums\ForecastRegion;
 use App\Support\DbDialect;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class SalesBaselineService
 {
@@ -231,7 +232,10 @@ class SalesBaselineService
      * Uses a 6-month rolling window centred on each quarter for seasonal accuracy.
      * Falls back to 12-month average if a quarter has insufficient data.
      *
-     * @return array<string, float> Quarter label => repeat AOV (e.g. ['Q1' => 87.50, 'Q2' => 92.30, ...])
+     * Returns both actual AOV (includes discounts) and normalized AOV (discount-adjusted)
+     * so the forecast can use discount-free pricing while tracking shows real AOV.
+     *
+     * @return array<string, array{actual: float, normalized: float}> Quarter => AOV variants
      */
     public function repeatAovByQuarter(int $year, ?ForecastRegion $region = null): array
     {
@@ -249,11 +253,13 @@ class SalesBaselineService
         $regionFilter = $this->regionWhereClause($region, $bindings);
 
         $monthExpr = DbDialect::monthExpr('ordered_at');
+        $normalizedExpr = $this->discountAdjustedRevenueExpr();
 
         $rows = DB::select("
             SELECT
                 {$monthExpr} as order_month,
                 SUM(net_revenue) as total_rev,
+                SUM({$normalizedExpr}) as normalized_rev,
                 COUNT(*) as order_count
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
@@ -265,14 +271,17 @@ class SalesBaselineService
 
         $monthlyData = collect($rows)->keyBy('order_month');
 
-        // 12-month fallback: total repeat rev / total repeat orders
+        // 12-month fallback
         $totalRev = $monthlyData->sum('total_rev');
+        $totalNormalized = $monthlyData->sum('normalized_rev');
         $totalOrders = $monthlyData->sum('order_count');
-        $fallbackAov = $totalOrders > 0 ? round($totalRev / $totalOrders, 2) : 0;
+        $fallbackActual = $totalOrders > 0 ? round($totalRev / $totalOrders, 2) : 0;
+        $fallbackNormalized = $totalOrders > 0 ? round($totalNormalized / $totalOrders, 2) : 0;
 
         $result = [];
         foreach ($quarterMonths as $quarter => $months) {
             $qRev = 0;
+            $qNormalized = 0;
             $qOrders = 0;
 
             // Rolling window: the quarter's own months + 1 month before and after
@@ -286,11 +295,15 @@ class SalesBaselineService
                 $data = $monthlyData->get($m);
                 if ($data) {
                     $qRev += (float) $data->total_rev;
+                    $qNormalized += (float) $data->normalized_rev;
                     $qOrders += (int) $data->order_count;
                 }
             }
 
-            $result[$quarter] = $qOrders >= 5 ? round($qRev / $qOrders, 2) : $fallbackAov;
+            $result[$quarter] = [
+                'actual' => $qOrders >= 5 ? round($qRev / $qOrders, 2) : $fallbackActual,
+                'normalized' => $qOrders >= 5 ? round($qNormalized / $qOrders, 2) : $fallbackNormalized,
+            ];
         }
 
         return $result;
@@ -301,11 +314,14 @@ class SalesBaselineService
      * The 2nd order is typically a different basket (kits, heaters) than subsequent
      * orders which shift towards consumables (wax, chain wear).
      *
+     * Returns both actual and normalized (discount-adjusted) AOV per group.
+     *
      * @return array{second_order: float, third_plus: float, overall: float}
      */
     public function repeatAovByOrderNumber(?ForecastRegion $region = null): array
     {
         $from = now()->subMonths(12)->toDateString();
+        $normalizedExpr = $this->discountAdjustedRevenueExpr('o');
 
         // Build region filter for the subquery (uses table alias 'o')
         $bindings = [$from];
@@ -336,10 +352,12 @@ class SalesBaselineService
                     ELSE 'third_plus'
                 END as order_group,
                 AVG(net_revenue) as avg_aov,
+                AVG(normalized_revenue) as avg_normalized_aov,
                 COUNT(*) as order_count
             FROM (
                 SELECT
                     o.net_revenue,
+                    {$normalizedExpr} as normalized_revenue,
                     ROW_NUMBER() OVER (PARTITION BY o.customer_id ORDER BY o.ordered_at) as order_sequence
                 FROM shopify_orders o
                 WHERE o.ordered_at >= ?
@@ -365,6 +383,240 @@ class SalesBaselineService
             'third_plus' => $thirdAov ?: $overall,
             'overall' => $overall,
         ];
+    }
+
+    /**
+     * Return rate per quarter: percentage of orders with partial refunds
+     * and average refund amount. Logs a warning if a quarter's return rate
+     * deviates more than 5 percentage points from the trailing 12-month average.
+     *
+     * @return array<string, array{return_rate: float, avg_refund: float, order_count: int, refunded_count: int}>
+     */
+    public function returnRateByQuarter(int $year, ?ForecastRegion $region = null): array
+    {
+        $quarterDates = [
+            'Q1' => [$year.'-01-01', $year.'-04-01'],
+            'Q2' => [$year.'-04-01', $year.'-07-01'],
+            'Q3' => [$year.'-07-01', $year.'-10-01'],
+            'Q4' => [$year.'-10-01', ($year + 1).'-01-01'],
+        ];
+
+        // Trailing 12-month average for comparison
+        $trailingFrom = ($year - 1).'-01-01';
+        $trailingTo = $year.'-01-01';
+        $trailingBindings = [$trailingFrom, $trailingTo];
+        $trailingRegion = $this->regionWhereClause($region, $trailingBindings);
+
+        $trailing = DB::selectOne("
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN refunded > 0 THEN 1 ELSE 0 END) as refunded_count
+            FROM shopify_orders
+            WHERE ordered_at >= ? AND ordered_at < ?
+                AND financial_status NOT IN ('voided', 'refunded')
+                {$trailingRegion}
+        ", $trailingBindings);
+
+        $trailingTotal = (int) ($trailing->total ?? 0);
+        $trailingRefunded = (int) ($trailing->refunded_count ?? 0);
+        $trailingRate = $trailingTotal > 0 ? $trailingRefunded / $trailingTotal * 100 : 0;
+
+        $result = [];
+        foreach ($quarterDates as $quarter => [$from, $to]) {
+            $bindings = [$from, $to];
+            $regionFilter = $this->regionWhereClause($region, $bindings);
+
+            $row = DB::selectOne("
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN refunded > 0 THEN 1 ELSE 0 END) as refunded_count,
+                    ROUND(AVG(CASE WHEN refunded > 0 THEN refunded END), 2) as avg_refund
+                FROM shopify_orders
+                WHERE ordered_at >= ? AND ordered_at < ?
+                    AND financial_status NOT IN ('voided', 'refunded')
+                    {$regionFilter}
+            ", $bindings);
+
+            $total = (int) ($row->total ?? 0);
+            $refundedCount = (int) ($row->refunded_count ?? 0);
+            $rate = $total > 0 ? round($refundedCount / $total * 100, 1) : 0;
+
+            if ($trailingRate > 0 && abs($rate - $trailingRate) > 5.0) {
+                Log::warning('Return rate deviation from trailing average', [
+                    'quarter' => $quarter,
+                    'region' => $region?->value ?? 'global',
+                    'quarter_rate' => $rate,
+                    'trailing_rate' => round($trailingRate, 1),
+                    'delta_pp' => round($rate - $trailingRate, 1),
+                ]);
+            }
+
+            $result[$quarter] = [
+                'return_rate' => $rate,
+                'avg_refund' => (float) ($row->avg_refund ?? 0),
+                'order_count' => $total,
+                'refunded_count' => $refundedCount,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Return rate per product category over the last 12 months.
+     * Joins through line items to attribute partial refunds to categories.
+     *
+     * @return array<string, array{return_rate: float, avg_refund: float, order_count: int}>
+     */
+    public function returnRateByCategory(int $year, ?ForecastRegion $region = null): array
+    {
+        $from = $year.'-01-01';
+        $to = ($year + 1).'-01-01';
+        $bindings = [$from, $to];
+        $regionFilter = $this->regionWhereClause($region, $bindings);
+
+        $rows = DB::select("
+            SELECT
+                p.product_category,
+                COUNT(DISTINCT so.id) as order_count,
+                COUNT(DISTINCT CASE WHEN so.refunded > 0 THEN so.id END) as refunded_count,
+                ROUND(AVG(CASE WHEN so.refunded > 0 THEN so.refunded END), 2) as avg_refund
+            FROM shopify_orders so
+            JOIN shopify_line_items sli ON sli.order_id = so.id
+            JOIN products p ON p.id = sli.product_id
+            WHERE so.ordered_at >= ? AND so.ordered_at < ?
+                AND so.financial_status NOT IN ('voided', 'refunded')
+                AND p.product_category IS NOT NULL
+                {$regionFilter}
+            GROUP BY p.product_category
+        ", $bindings);
+
+        $result = [];
+        foreach ($rows as $row) {
+            $total = (int) $row->order_count;
+            $refunded = (int) $row->refunded_count;
+
+            $result[$row->product_category] = [
+                'return_rate' => $total > 0 ? round($refunded / $total * 100, 1) : 0,
+                'avg_refund' => (float) ($row->avg_refund ?? 0),
+                'order_count' => $total,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Gross AOV per quarter (before refunds): net_revenue + refunded.
+     * Compare with net AOV to see how much return-driven AOV reduction occurs.
+     *
+     * @return array<string, array{gross_aov: float, net_aov: float, refund_impact: float}>
+     */
+    public function grossAovByQuarter(int $year, ?ForecastRegion $region = null): array
+    {
+        $quarterMonths = [
+            'Q1' => [1, 2, 3],
+            'Q2' => [4, 5, 6],
+            'Q3' => [7, 8, 9],
+            'Q4' => [10, 11, 12],
+        ];
+
+        $from = $year.'-01-01';
+        $to = ($year + 1).'-01-01';
+        $bindings = [$from, $to];
+        $regionFilter = $this->regionWhereClause($region, $bindings);
+
+        $monthExpr = DbDialect::monthExpr('ordered_at');
+
+        $rows = DB::select("
+            SELECT
+                {$monthExpr} as order_month,
+                SUM(net_revenue) as net_rev,
+                SUM(net_revenue + COALESCE(refunded, 0)) as gross_rev,
+                COUNT(*) as order_count
+            FROM shopify_orders
+            WHERE ordered_at >= ? AND ordered_at < ?
+                AND is_first_order IS NOT TRUE
+                AND financial_status NOT IN ('voided', 'refunded')
+                {$regionFilter}
+            GROUP BY order_month
+        ", $bindings);
+
+        $monthlyData = collect($rows)->keyBy('order_month');
+
+        $result = [];
+        foreach ($quarterMonths as $quarter => $months) {
+            $netRev = 0;
+            $grossRev = 0;
+            $orders = 0;
+
+            foreach ($months as $m) {
+                $data = $monthlyData->get($m);
+                if ($data) {
+                    $netRev += (float) $data->net_rev;
+                    $grossRev += (float) $data->gross_rev;
+                    $orders += (int) $data->order_count;
+                }
+            }
+
+            $grossAov = $orders > 0 ? round($grossRev / $orders, 2) : 0;
+            $netAov = $orders > 0 ? round($netRev / $orders, 2) : 0;
+
+            $result[$quarter] = [
+                'gross_aov' => $grossAov,
+                'net_aov' => $netAov,
+                'refund_impact' => round($grossAov - $netAov, 2),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Discount rate diagnostics: percentage of orders with non-zero discounts
+     * and average discount amount, for visibility into promo impact on AOV.
+     *
+     * @return array{discount_rate: float, avg_discount: float, orders_with_discount: int, total_orders: int}
+     */
+    public function discountRate(?ForecastRegion $region = null): array
+    {
+        $from = now()->subMonths(12)->toDateString();
+        $bindings = [$from];
+        $regionFilter = $this->regionWhereClause($region, $bindings);
+
+        $row = DB::selectOne("
+            SELECT
+                COUNT(*) as total_orders,
+                SUM(CASE WHEN discounts > 0 THEN 1 ELSE 0 END) as orders_with_discount,
+                ROUND(AVG(CASE WHEN discounts > 0 THEN discounts END), 2) as avg_discount
+            FROM shopify_orders
+            WHERE ordered_at >= ?
+                AND financial_status NOT IN ('voided', 'refunded')
+                {$regionFilter}
+        ", $bindings);
+
+        $total = (int) $row->total_orders;
+        $withDiscount = (int) $row->orders_with_discount;
+
+        return [
+            'discount_rate' => $total > 0 ? round($withDiscount / $total * 100, 1) : 0,
+            'avg_discount' => (float) ($row->avg_discount ?? 0),
+            'orders_with_discount' => $withDiscount,
+            'total_orders' => $total,
+        ];
+    }
+
+    /**
+     * SQL expression for discount-adjusted revenue: what the customer would have
+     * paid without the discount (net_revenue + discounts).
+     *
+     * @param  string|null  $alias  Table alias prefix (e.g. 'o' → 'o.net_revenue')
+     */
+    private function discountAdjustedRevenueExpr(?string $alias = null): string
+    {
+        $prefix = $alias ? "{$alias}." : '';
+
+        return "({$prefix}net_revenue + COALESCE({$prefix}discounts, 0))";
     }
 
     /**

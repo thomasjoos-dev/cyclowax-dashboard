@@ -246,9 +246,9 @@ class CohortProjectionService
         $curve = $this->retentionCurve();
         $retentionMonths = $curve['months'];
 
-        // Get repeat AOV from rolling quarterly actuals (seasonal-aware)
+        // Get repeat AOV from rolling quarterly actuals (seasonal-aware, discount-adjusted)
         $quarterlyAov = $this->forecast->repeatAovByQuarter($year);
-        $avgRepeatAov = collect($quarterlyAov)->filter(fn ($v) => $v > 0)->avg() ?: 0;
+        $avgRepeatAov = collect($quarterlyAov)->map(fn ($v) => $v['normalized'] ?? 0)->filter(fn ($v) => $v > 0)->avg() ?: 0;
 
         // Final fallback: calculate from monthly actuals if dynamic AOV unavailable
         if ($avgRepeatAov <= 0) {

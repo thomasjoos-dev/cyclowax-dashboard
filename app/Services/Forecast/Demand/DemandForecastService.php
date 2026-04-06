@@ -76,8 +76,9 @@ class DemandForecastService
             // Get quarterly growth assumptions
             $qa = $assumptions[$quarter] ?? null;
 
-            // Resolve repeat AOV: dynamic (quarterly actuals) → scenario assumption fallback
-            $quarterRepeatAov = $dynamicAov[$quarter] ?? $qa['repeat_aov'] ?? 0;
+            // Resolve repeat AOV: use normalized (discount-adjusted) from quarterly actuals → scenario fallback
+            $quarterAov = $dynamicAov[$quarter] ?? null;
+            $quarterRepeatAov = $quarterAov['normalized'] ?? $qa['repeat_aov'] ?? 0;
             if ($quarterRepeatAov <= 0 && $qa) {
                 $quarterRepeatAov = $qa['repeat_aov'];
             }
@@ -513,7 +514,7 @@ class DemandForecastService
      * Logs a warning if the implied AOV from product shares × unit prices diverges
      * more than 25% from the actual repeat AOV — indicating the mix and AOV are out of sync.
      *
-     * @param  array<string, float>  $dynamicAov  Quarterly dynamic AOV
+     * @param  array<string, array{actual: float, normalized: float}>  $dynamicAov  Quarterly dynamic AOV
      * @param  array<string, array{repeat_aov: float}>  $assumptions  Scenario assumptions by quarter
      * @param  array<string, ScenarioProductMix>  $mixes  Product mixes by category
      */
@@ -529,9 +530,10 @@ class DemandForecastService
             $impliedAov += (float) $mix->repeat_share * (float) $mix->avg_unit_price;
         }
 
-        // Compare against each quarter's AOV
+        // Compare against each quarter's normalized AOV
         foreach (['Q2', 'Q3', 'Q4'] as $quarter) {
-            $actualAov = $dynamicAov[$quarter] ?? ($assumptions[$quarter]['repeat_aov'] ?? null);
+            $quarterAov = $dynamicAov[$quarter] ?? null;
+            $actualAov = $quarterAov['normalized'] ?? ($assumptions[$quarter]['repeat_aov'] ?? null);
             if ($actualAov === null || $actualAov <= 0 || $impliedAov <= 0) {
                 continue;
             }
