@@ -15,7 +15,7 @@
 
         body {
             font-family: 'Greycliff', sans-serif;
-            font-size: 10.5pt;
+            font-size: 12pt;
             color: #1a1a1a;
             line-height: 1.55;
             padding: 40px;
@@ -50,13 +50,13 @@
         .subtitle {
             font-size: 10pt;
             color: #888888;
-            margin-bottom: 4px;
+            margin-bottom: 8px;
         }
 
         .intro {
-            font-size: 9.5pt;
+            font-size: 11pt;
             color: #555555;
-            line-height: 1.5;
+            line-height: 1.55;
             margin-bottom: 18px;
         }
 
@@ -125,13 +125,13 @@
 
         /* ── Section headers ── */
         h2 {
-            font-size: 12pt;
+            font-size: 14pt;
             font-weight: bold;
             color: #000000;
             text-transform: uppercase;
             letter-spacing: 0.8px;
-            margin-top: 18px;
-            margin-bottom: 8px;
+            margin-top: 20px;
+            margin-bottom: 10px;
         }
 
         h3 {
@@ -149,7 +149,7 @@
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 20px;
-            font-size: 10pt;
+            font-size: 11pt;
         }
 
         thead th {
@@ -158,7 +158,7 @@
             font-weight: bold;
             text-align: left;
             padding: 8px 12px;
-            font-size: 8.5pt;
+            font-size: 9.5pt;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             border-bottom: 1px solid #e0e0e0;
@@ -200,7 +200,7 @@
             padding: 14px 18px;
             margin: 10px 0;
             line-height: 1.6;
-            font-size: 10pt;
+            font-size: 11pt;
         }
 
         .analysis-card p {
@@ -218,7 +218,7 @@
         }
 
         li {
-            margin-bottom: 3px;
+            margin-bottom: 8px;
             line-height: 1.5;
         }
 
@@ -280,11 +280,11 @@
 
         /* ── Compact table (stacked values per cell) ── */
         .compact-table {
-            font-size: 7pt;
+            font-size: 9.5pt;
         }
 
         .compact-table thead th {
-            font-size: 6.5pt;
+            font-size: 8.5pt;
             padding: 4px 5px;
             text-align: center;
         }
@@ -306,7 +306,7 @@
         }
 
         .compact-table .cell-net {
-            font-size: 6.5pt;
+            font-size: 8pt;
             color: #888888;
         }
     </style>

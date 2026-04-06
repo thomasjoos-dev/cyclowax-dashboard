@@ -27,7 +27,7 @@ class DemandForecastService
     /**
      * Generate a full year demand forecast per category per month.
      *
-     * @return array<int, array<string, array{units: int, revenue: float, seasonal_index: float, event_boost: float, pull_forward: float}>>
+     * @return array<int, array<string, array{units: int, revenue: float, acq_revenue: float, rep_revenue: float, seasonal_index: float, event_boost: float, pull_forward: float}>>
      */
     public function forecastYear(Scenario $scenario, int $year, ?ForecastRegion $region = null): array
     {
@@ -138,6 +138,9 @@ class DemandForecastService
                 $catRepRevenue = $repRevenue * (float) $mix->repeat_share;
                 $catBaseRevenue = $catAcqRevenue + $catRepRevenue;
 
+                // Track acq/rep ratio for proportional distribution after adjustments
+                $acqRatio = $catBaseRevenue > 0 ? $catAcqRevenue / $catBaseRevenue : 0;
+
                 // Apply seasonal index (regional if available)
                 $seasonalIndex = $this->seasonalCalculator->resolveIndex($category, $month, $region);
                 $seasonalRevenue = $catBaseRevenue * $seasonalIndex;
@@ -152,9 +155,15 @@ class DemandForecastService
                 $avgPrice = (float) $mix->avg_unit_price;
                 $forecastedUnits = $avgPrice > 0 ? (int) round($forecastedRevenue / $avgPrice) : 0;
 
+                // Proportionally split final revenue into acquisition vs repeat
+                $finalAcqRevenue = round($forecastedRevenue * $acqRatio, 2);
+                $finalRepRevenue = round($forecastedRevenue - $finalAcqRevenue, 2);
+
                 $monthForecast[$categoryValue] = [
                     'units' => $forecastedUnits,
                     'revenue' => round($forecastedRevenue, 2),
+                    'acq_revenue' => $finalAcqRevenue,
+                    'rep_revenue' => $finalRepRevenue,
                     'seasonal_index' => $seasonalIndex,
                     'event_boost' => round($eventBoost, 2),
                     'pull_forward' => round($pullForward, 2),
@@ -185,7 +194,7 @@ class DemandForecastService
     /**
      * Total forecast aggregated across all categories, per month + year total.
      *
-     * @return array{months: array<int, array{units: int, revenue: float}>, year_total: array{units: int, revenue: float}}
+     * @return array{months: array<int, array{units: int, revenue: float, acq_revenue: float, rep_revenue: float}>, year_total: array{units: int, revenue: float, acq_revenue: float, rep_revenue: float}}
      */
     public function totalForecast(Scenario $scenario, int $year, ?ForecastRegion $region = null): array
     {
@@ -194,19 +203,27 @@ class DemandForecastService
         $months = [];
         $yearUnits = 0;
         $yearRevenue = 0;
+        $yearAcqRevenue = 0;
+        $yearRepRevenue = 0;
 
         for ($month = 1; $month <= 12; $month++) {
-            $monthData = $forecast[$month] ?? [];
-            $units = collect($monthData)->sum('units');
-            $revenue = collect($monthData)->sum('revenue');
+            $monthData = collect($forecast[$month] ?? []);
+            $units = $monthData->sum('units');
+            $revenue = $monthData->sum('revenue');
+            $acqRevenue = $monthData->sum('acq_revenue');
+            $repRevenue = $monthData->sum('rep_revenue');
 
             $months[$month] = [
                 'units' => $units,
                 'revenue' => round($revenue, 2),
+                'acq_revenue' => round($acqRevenue, 2),
+                'rep_revenue' => round($repRevenue, 2),
             ];
 
             $yearUnits += $units;
             $yearRevenue += $revenue;
+            $yearAcqRevenue += $acqRevenue;
+            $yearRepRevenue += $repRevenue;
         }
 
         return [
@@ -214,6 +231,8 @@ class DemandForecastService
             'year_total' => [
                 'units' => $yearUnits,
                 'revenue' => round($yearRevenue, 2),
+                'acq_revenue' => round($yearAcqRevenue, 2),
+                'rep_revenue' => round($yearRepRevenue, 2),
             ],
         ];
     }
