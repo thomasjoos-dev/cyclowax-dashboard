@@ -13,12 +13,40 @@ use Illuminate\Support\Facades\DB;
 /**
  * Seed regional scenario assumptions and product mixes for all active scenarios.
  *
- * Calculates per-region growth rates from Q1 2025 vs Q1 2026,
- * repeat AOV from historical data, and product mix shares from 12m sales.
+ * Uses curated base growth rates per region (validated against Q1 YoY data),
+ * data-driven repeat AOV and product mix shares from 12m sales.
  * Uses updateOrCreate for idempotency — safe to run multiple times.
+ *
+ * Growth rates are set as realistic base targets, not raw YoY extrapolation.
+ * Conservative and ambitious rates are derived by preserving the scenario ratio
+ * relative to the global base assumptions.
  */
 class RegionalScenarioSeeder extends Seeder
 {
+    /**
+     * Curated base growth rates per region (multiplier vs same month prior year).
+     * These are targets for the "base" scenario — other scenarios scale proportionally.
+     *
+     * Rationale:
+     * - DE/NL: mature markets, steady growth
+     * - BE: home region, strong momentum
+     * - US: warehouse launch driving scale
+     * - GB: breakout market but first-wave dampened, low CM1
+     * - EU_ALPINE: AT growing, CH recovering
+     * - EU_NORDICS/EU_LONG_TAIL/ROW: early markets, moderate expansion cap
+     */
+    private const BASE_GROWTH_RATES = [
+        'de' => 1.50,
+        'be' => 1.80,
+        'us' => 3.00,
+        'gb' => 2.50,
+        'nl' => 1.50,
+        'eu_alpine' => 2.00,
+        'eu_nordics' => 2.00,
+        'eu_long_tail' => 2.00,
+        'row' => 2.00,
+    ];
+
     public function run(): void
     {
         $scenarios = Scenario::query()->active()->get();
@@ -104,6 +132,13 @@ class RegionalScenarioSeeder extends Seeder
         $globalAssumptions,
         array $metrics,
     ): void {
+        $baseGrowth = self::BASE_GROWTH_RATES[$region->value] ?? 1.50;
+
+        // Reference: the global "base" scenario uses acq_rate 0.85 for Q2/Q3.
+        // We scale the curated regional rate by the ratio of this scenario's global rate
+        // to the base global rate, preserving conservative/ambitious spread.
+        $globalBaseQ2Rate = 0.85; // base scenario reference
+
         foreach (['Q2', 'Q3', 'Q4'] as $quarter) {
             $global = $globalAssumptions[$quarter] ?? null;
 
@@ -111,10 +146,12 @@ class RegionalScenarioSeeder extends Seeder
                 continue;
             }
 
-            // Regional acq_rate = global acq_rate × (regional growth / global growth)
-            // This preserves the scenario's relative optimism/pessimism while applying regional dynamics
-            $globalGrowth = (float) $global->acq_rate;
-            $regionalAcqRate = round($metrics['acq_growth_rate'] * $globalGrowth, 4);
+            // Scale: regional_rate = base_growth × (scenario_global_rate / base_reference_rate)
+            // Conservative (0.70): DE gets 1.50 × (0.70/0.85) = 1.24
+            // Base (0.85): DE gets 1.50 × (0.85/0.85) = 1.50
+            // Ambitious (1.08): DE gets 1.50 × (1.08/0.85) = 1.91
+            $scenarioFactor = $globalBaseQ2Rate > 0 ? (float) $global->acq_rate / $globalBaseQ2Rate : 1.0;
+            $regionalAcqRate = round($baseGrowth * $scenarioFactor, 4);
 
             ScenarioAssumption::updateOrCreate(
                 [
