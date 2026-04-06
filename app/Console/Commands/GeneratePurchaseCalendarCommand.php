@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\Warehouse;
 use App\Models\Scenario;
 use App\Models\SupplyProfile;
 use App\Services\Forecast\Supply\ComponentNettingService;
@@ -10,7 +11,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
-#[Signature('forecast:purchase-calendar {scenario : Scenario name (e.g. base)} {--year= : Forecast year (defaults to current)} {--export : Export to CSV on Desktop}')]
+#[Signature('forecast:purchase-calendar {scenario : Scenario name (e.g. base)} {--year= : Forecast year (defaults to current)} {--warehouse= : Generate for a specific warehouse (be, us)} {--export : Export to CSV on Desktop}')]
 #[Description('Generate purchase + production calendar based on demand forecast, BOM explosion and stock netting')]
 class GeneratePurchaseCalendarCommand extends Command
 {
@@ -27,14 +28,27 @@ class GeneratePurchaseCalendarCommand extends Command
             return self::FAILURE;
         }
 
+        // Resolve optional warehouse filter
+        $warehouseValue = $this->option('warehouse');
+        $warehouse = null;
+        if ($warehouseValue) {
+            $warehouse = Warehouse::tryFrom($warehouseValue);
+            if (! $warehouse) {
+                $this->error("Unknown warehouse: {$warehouseValue}. Valid: ".implode(', ', array_map(fn ($w) => $w->value, Warehouse::cases())));
+
+                return self::FAILURE;
+            }
+        }
+
         // Data quality warnings
         $this->checkStockFreshness($netting);
         $this->checkSupplyProfileValidation();
 
-        $this->info("Generating purchase + production calendar: {$scenario->label} ({$year})...");
+        $warehouseLabel = $warehouse ? " [{$warehouse->label()}]" : '';
+        $this->info("Generating purchase + production calendar: {$scenario->label} ({$year}){$warehouseLabel}...");
         $this->newLine();
 
-        $result = $calendarService->generate($scenario, $year);
+        $result = $calendarService->generate($scenario, $year, $warehouse);
         $timeline = $result['timeline'];
 
         if (empty($timeline)) {

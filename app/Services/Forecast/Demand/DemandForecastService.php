@@ -3,6 +3,7 @@
 namespace App\Services\Forecast\Demand;
 
 use App\Enums\ForecastGroup;
+use App\Enums\ForecastRegion;
 use App\Enums\ProductCategory;
 use App\Exceptions\InsufficientBaselineException;
 use App\Exceptions\InvalidProductMixException;
@@ -25,26 +26,28 @@ class DemandForecastService
      *
      * @return array<int, array<string, array{units: int, revenue: float, seasonal_index: float, event_boost: float, pull_forward: float}>>
      */
-    public function forecastYear(Scenario $scenario, int $year): array
+    public function forecastYear(Scenario $scenario, int $year, ?ForecastRegion $region = null): array
     {
         $scenario->loadMissing(['assumptions', 'productMixes']);
 
-        $mixes = $this->indexMixesByCategory($scenario);
+        $mixes = $this->indexMixesByCategory($scenario, $region);
 
         if (count($mixes) > 0) {
             $this->validateProductMixes(collect($mixes));
         }
 
-        $baselineByMonth = $this->getBaselineByMonth($year, count($mixes) > 0);
-        $assumptions = $this->indexAssumptionsByQuarter($scenario);
+        $baselineByMonth = $this->getBaselineByMonth($year, count($mixes) > 0, $region);
+        $assumptions = $this->indexAssumptionsByQuarter($scenario, $region);
 
         $plannedEvents = $this->demandEventService->plannedForYear($year);
 
-        // Fetch retention curve for cohort-based repeat model
-        $curveData = $this->cohortProjectionService->retentionCurve();
+        // Fetch retention curve — regional if available
+        $curveData = $this->cohortProjectionService->retentionCurve(12, $region);
         $retentionCurve = $curveData['months'];
         $useCohortModel = ! empty($retentionCurve);
-        $curveAdjustment = (float) ($scenario->retention_curve_adjustment ?? 1.0);
+
+        // Curve adjustment: use regional retention_index if set, else global
+        $curveAdjustment = $this->resolveRetentionAdjustment($scenario, $assumptions);
 
         $forecast = [];
         $cumulativeCustomers = 0;
@@ -103,8 +106,8 @@ class DemandForecastService
                 $catRepRevenue = $repRevenue * (float) $mix->repeat_share;
                 $catBaseRevenue = $catAcqRevenue + $catRepRevenue;
 
-                // Apply seasonal index
-                $seasonalIndex = $this->seasonalCalculator->resolveIndex($category, $month);
+                // Apply seasonal index (regional if available)
+                $seasonalIndex = $this->seasonalCalculator->resolveIndex($category, $month, $region);
                 $seasonalRevenue = $catBaseRevenue * $seasonalIndex;
 
                 // Apply demand event boost
@@ -137,10 +140,10 @@ class DemandForecastService
      *
      * @return array<string, array{units: int, revenue: float, seasonal_index: float, event_boost: float, pull_forward: float}>
      */
-    public function forecastMonth(Scenario $scenario, string $yearMonth): array
+    public function forecastMonth(Scenario $scenario, string $yearMonth, ?ForecastRegion $region = null): array
     {
         [$year, $month] = explode('-', $yearMonth);
-        $fullYear = $this->forecastYear($scenario, (int) $year);
+        $fullYear = $this->forecastYear($scenario, (int) $year, $region);
 
         return $fullYear[(int) $month] ?? [];
     }
@@ -150,9 +153,9 @@ class DemandForecastService
      *
      * @return array{months: array<int, array{units: int, revenue: float}>, year_total: array{units: int, revenue: float}}
      */
-    public function totalForecast(Scenario $scenario, int $year): array
+    public function totalForecast(Scenario $scenario, int $year, ?ForecastRegion $region = null): array
     {
-        $forecast = $this->forecastYear($scenario, $year);
+        $forecast = $this->forecastYear($scenario, $year, $region);
 
         $months = [];
         $yearUnits = 0;
@@ -184,17 +187,21 @@ class DemandForecastService
     /**
      * Describe which repeat model would be used for a given scenario.
      *
-     * @return array{model: string, curve_adjustment: float, cohorts_used: int}
+     * @return array{model: string, curve_adjustment: float, cohorts_used: int, source: string}
      */
-    public function repeatModelInfo(Scenario $scenario): array
+    public function repeatModelInfo(Scenario $scenario, ?ForecastRegion $region = null): array
     {
-        $curveData = $this->cohortProjectionService->retentionCurve();
+        $curveData = $this->cohortProjectionService->retentionCurve(12, $region);
         $useCohortModel = ! empty($curveData['months']);
+
+        $scenario->loadMissing('assumptions');
+        $assumptions = $this->indexAssumptionsByQuarter($scenario, $region);
 
         return [
             'model' => $useCohortModel ? 'cohort' : 'flat',
-            'curve_adjustment' => (float) ($scenario->retention_curve_adjustment ?? 1.0),
+            'curve_adjustment' => $this->resolveRetentionAdjustment($scenario, $assumptions),
             'cohorts_used' => $curveData['cohorts_used'],
+            'source' => $curveData['source'],
         ];
     }
 
@@ -203,13 +210,13 @@ class DemandForecastService
      *
      * @return array<string, array{acq_rev: float, rep_rev: float, new_customers: int, repeat_orders: int}>
      */
-    private function getBaselineByMonth(int $year, bool $requireQ1 = true): array
+    private function getBaselineByMonth(int $year, bool $requireQ1 = true, ?ForecastRegion $region = null): array
     {
         $prevYear = $year - 1;
-        $rows = $this->forecastService->monthlyActuals("{$prevYear}-01-01", "{$year}-01-01");
+        $rows = $this->forecastService->monthlyActuals("{$prevYear}-01-01", "{$year}-01-01", $region);
 
         // Also get current year actuals for Q1
-        $currentRows = $this->forecastService->monthlyActuals("{$year}-01-01", "{$year}-04-01");
+        $currentRows = $this->forecastService->monthlyActuals("{$year}-01-01", "{$year}-04-01", $region);
 
         $indexed = [];
         foreach (array_merge($rows, $currentRows) as $row) {
@@ -229,10 +236,16 @@ class DemandForecastService
         }
 
         if ($requireQ1 && $q1Available === 0) {
+            // For regional forecasts, missing Q1 is non-fatal — the region may have no orders
+            if ($region !== null) {
+                Log::info("No Q1 data for {$region->label()} in {$year} — region will produce zero forecast");
+
+                return [];
+            }
             throw InsufficientBaselineException::noQ1Data($year);
         }
 
-        if ($requireQ1 && $q1Available < 3) {
+        if ($requireQ1 && $q1Available < 3 && $region === null) {
             Log::warning('Incomplete Q1 data for forecast baseline', [
                 'year' => $year,
                 'missing_months' => $q1Missing,
@@ -259,18 +272,35 @@ class DemandForecastService
 
     /**
      * Index scenario assumptions by quarter.
+     * Loads regional assumptions first; falls back to global (region=null) per quarter.
      *
-     * @return array<string, array{acq_rate: float, repeat_rate: float, repeat_aov: float}>
+     * @return array<string, array{acq_rate: float, repeat_rate: float, repeat_aov: float, retention_index: float|null}>
      */
-    private function indexAssumptionsByQuarter(Scenario $scenario): array
+    private function indexAssumptionsByQuarter(Scenario $scenario, ?ForecastRegion $region = null): array
     {
-        $indexed = [];
+        $globalAssumptions = [];
+        $regionalAssumptions = [];
+
         foreach ($scenario->assumptions as $assumption) {
-            $indexed[$assumption->quarter] = [
-                'acq_rate' => (float) $assumption->acq_rate,
-                'repeat_rate' => (float) $assumption->repeat_rate,
-                'repeat_aov' => (float) $assumption->repeat_aov,
-            ];
+            if ($assumption->region === null) {
+                $globalAssumptions[$assumption->quarter] = $assumption;
+            } elseif ($region !== null && $assumption->region === $region) {
+                $regionalAssumptions[$assumption->quarter] = $assumption;
+            }
+        }
+
+        $indexed = [];
+        foreach (['Q1', 'Q2', 'Q3', 'Q4'] as $quarter) {
+            $assumption = $regionalAssumptions[$quarter] ?? $globalAssumptions[$quarter] ?? null;
+
+            if ($assumption) {
+                $indexed[$quarter] = [
+                    'acq_rate' => (float) $assumption->acq_rate,
+                    'repeat_rate' => (float) $assumption->repeat_rate,
+                    'repeat_aov' => (float) $assumption->repeat_aov,
+                    'retention_index' => $assumption->retention_index !== null ? (float) $assumption->retention_index : null,
+                ];
+            }
         }
 
         return $indexed;
@@ -278,14 +308,58 @@ class DemandForecastService
 
     /**
      * Index product mixes by category value.
+     * Loads regional mixes first; falls back to global (region=null) per category.
      *
      * @return array<string, ScenarioProductMix>
      */
-    private function indexMixesByCategory(Scenario $scenario): array
+    private function indexMixesByCategory(Scenario $scenario, ?ForecastRegion $region = null): array
     {
-        return $scenario->productMixes
-            ->keyBy(fn (ScenarioProductMix $m) => $m->product_category->value)
-            ->all();
+        $globalMixes = [];
+        $regionalMixes = [];
+
+        foreach ($scenario->productMixes as $mix) {
+            $catValue = $mix->product_category->value;
+
+            if ($mix->region === null) {
+                $globalMixes[$catValue] = $mix;
+            } elseif ($region !== null && $mix->region === $region) {
+                $regionalMixes[$catValue] = $mix;
+            }
+        }
+
+        // Regional takes priority; fall back to global per category
+        $result = [];
+        foreach ($globalMixes as $catValue => $mix) {
+            $result[$catValue] = $regionalMixes[$catValue] ?? $mix;
+        }
+
+        // Include any regional-only categories not in global
+        foreach ($regionalMixes as $catValue => $mix) {
+            if (! isset($result[$catValue])) {
+                $result[$catValue] = $mix;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Resolve the retention curve adjustment factor.
+     * Regional retention_index (from assumptions) overrides global retention_curve_adjustment.
+     *
+     * @param  array<string, array{retention_index: float|null}>  $assumptions
+     */
+    private function resolveRetentionAdjustment(Scenario $scenario, array $assumptions): float
+    {
+        // Check if any regional assumption has a retention_index set
+        foreach ($assumptions as $qa) {
+            if (isset($qa['retention_index']) && $qa['retention_index'] !== null) {
+                return $qa['retention_index'];
+            }
+        }
+
+        // Fallback to global scenario-level adjustment
+        return (float) ($scenario->retention_curve_adjustment ?? 1.0);
     }
 
     /**
@@ -329,8 +403,6 @@ class DemandForecastService
 
     /**
      * Calculate repeat revenue for a forecast month using cohort-based retention.
-     * Loops through all prior cohorts, calculates their age, and sums incremental
-     * repeat revenue based on the retention curve delta (this month vs previous month).
      *
      * @param  array<int, int>  $cohorts  Month number → new customer count
      * @param  int  $forecastMonth  The month (1-12) to calculate repeat for

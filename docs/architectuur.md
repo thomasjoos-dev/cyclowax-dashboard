@@ -103,7 +103,7 @@ Suspect Profile Flagging
 
 Seasonal Indices
   └── CalculateSeasonalIndicesCommand (artisan)
-        └── SeasonalIndexCalculator (monthly normalisatie → avg = 1.0)
+        └── SeasonalIndexCalculator (monthly normalisatie → avg = 1.0, per ForecastRegion)
 
 Demand Forecast System
   ├── CalculateCategorySeasonalIndicesCommand (forecast:calculate-seasonal)
@@ -111,26 +111,43 @@ Demand Forecast System
   │           ├── Seizoensindexen per ProductCategory, geschoond voor DemandEvents
   │           ├── Gewogen groepsgemiddelde per ForecastGroup
   │           ├── Maturity-based fallback: Launch→groep, Ramping→mix, Mature→eigen
+  │           ├── Per ForecastRegion (--region / --all-regions) + globaal
   │           └── DemandEventService (historische events als exclusie-filter)
   ├── GenerateDemandForecastCommand (forecast:generate {scenario})
   │     ├── DemandForecastService (kernberekening)
+  │     │     ├── Optioneel per ForecastRegion (--region / --all-regions)
   │     │     ├── validateProductMixes() — shares in [0,1], som per type 0.95–1.05
   │     │     ├── Q1 completeness check — exception bij 0 maanden, warning bij <3
+  │     │     ├── Regionale baseline via SalesBaselineService (shipping_country_code filter)
+  │     │     ├── Regionale assumptions: per regio per kwartaal, fallback naar global (region=null)
+  │     │     ├── Regionale product mixes: per regio per categorie, fallback naar global
   │     │     ├── baseline (vorig jaar) × scenario growth × product mix × seasonal index
   │     │     ├── Repeat model: cohort-based (primair) of flat (fallback)
   │     │     │     ├── Cohort: per maand door alle eerdere cohorten, incrementele retentie via curve delta
-  │     │     │     ├── CohortProjectionService.retentionCurve() → historische retention %
+  │     │     │     ├── CohortProjectionService.retentionCurve(?ForecastRegion) → regionale of globale curve
+  │     │     │     │     ├── Standalone regio's (DE/BE/US/GB/NL): eigen curve als ≥3 cohorten met ≥10 klanten
+  │     │     │     │     └── Gegroepeerde regio's: fallback naar globale curve met eigen volumes
   │     │     │     ├── monthlyRetentionRate() — lineaire interpolatie tussen bekende datapunten
-  │     │     │     ├── Scenario.retention_curve_adjustment — scalar (0.50–1.50) om curve te schalen
+  │     │     │     ├── retention_index (per regio, op assumptions) overschrijft Scenario.retention_curve_adjustment
   │     │     │     └── Flat fallback: cumulativeCustomers × repeat_rate / 3 (als geen curve beschikbaar)
-  │     │     ├── + DemandEvent boost (geplande campagnes/launches)
+  │     │     ├── + DemandEvent boost (geplande campagnes/launches — globaal, niet per regio)
   │     │     ├── - Pull-forward deductie (alleen Getting Started categorieën)
-  │     │     └── → units + revenue per ProductCategory per maand
+  │     │     └── → units + revenue per ProductCategory per maand (per regio of globaal)
+  │     ├── RegionalForecastAggregator (aggregatie laag)
+  │     │     ├── forecastAllRegions() — loopt over 9 regio's, sommeert, bewaart breakdown
+  │     │     ├── forecastByWarehouse() — groepeert regio's per Warehouse (BE/US)
+  │     │     └── CM1 per regio via RegionalCostService
+  │     ├── RegionalCostService (CM1 berekening)
+  │     │     ├── costProfile(?ForecastRegion) — COGS (actuele Odoo cost_price, gewogen naar mix),
+  │     │     │     shipping (historisch per regio), payment fee (config)
+  │     │     ├── calculateCm1() — net_revenue - COGS - shipping - payment_fee per regio
+  │     │     └── COGS is regio-onafhankelijk; shipping verschilt per regio
   │     └── ForecastTrackingService (snapshot opslag)
-  │           ├── recordSnapshot() — forecast opslaan als ForecastSnapshot rijen
-  │           ├── updateActuals() — werkelijke cijfers invullen na afloop maand
-  │           ├── monthlyVariance() — forecast vs actuals + variance%
-  │           └── paceProjection() — bijgestelde jaarprojectie op basis van YTD
+  │           ├── recordSnapshot(?ForecastRegion) — opslaan per regio of globaal
+  │           ├── NULL-safe upsert — werkt op SQLite (NULL ≠ NULL) én PostgreSQL (NULL = NULL)
+  │           ├── updateActuals(?ForecastRegion) — werkelijke cijfers per regio
+  │           ├── monthlyVariance(?ForecastRegion) — forecast vs actuals + variance%
+  │           └── paceProjection(?ForecastRegion) — bijgestelde jaarprojectie per regio
   ├── UpdateForecastActualsCommand (forecast:update-actuals {YYYY-MM})
   │     └── ForecastTrackingService.updateActuals()
   └── InventoryHealthService
@@ -149,8 +166,9 @@ Demand Forecast System
         └── Controleert: orphan BOMs, lege explosies, ontbrekende lead times, producten zonder BOM
 
   Purchase & Production Calendar
-  └── GeneratePurchaseCalendarCommand (forecast:purchase-calendar {scenario})
+  └── GeneratePurchaseCalendarCommand (forecast:purchase-calendar {scenario} [--warehouse=be|us])
         └── PurchaseCalendarService (orchestrator)
+              ├── Optioneel per Warehouse — aggregeert demand van warehouse-regio's
               ├── Phase 1: demand forecast → SKU mix → BOM explosion per categorie
               ├── Phase 2: aggregeer component demand over alle categorieën → 1× netten
               │     └── ComponentNettingService.net() — stock + open PO aftrek
@@ -199,6 +217,17 @@ Demand Forecast System
   ├── Chain Wear: Chain, ChainConsumable, ChainTool — slijtage-vervanging
   └── Companion: Heater, HeaterAccessory, Cleaning, MultiTool, Accessory — add-ons
 
+  Forecast Regions (ForecastRegion enum):
+  ├── Standalone: DE, BE, US (incl CA), GB, NL — eigen baseline, retentiecurve, groeiparameters
+  ├── Gegroepeerd: EU_ALPINE (AT,CH), EU_NORDICS (DK,SE,NO,FI,IS), EU_LONG_TAIL (FR,IT,ES,PT,LU,IE,...), ROW
+  ├── ForecastRegion::forCountry(code) — lookup country → region (fallback ROW)
+  ├── ForecastRegion::warehouse() → Warehouse (BE of US)
+  └── ForecastRegion::hasOwnRetentionCurve() — standalone regio's: eigen curve, grouped: global fallback
+
+  Warehouses (Warehouse enum):
+  ├── BE — DE, BE, NL, GB, EU_ALPINE, EU_NORDICS, EU_LONG_TAIL, ROW
+  └── US — US (incl CA)
+
 Margin Computation
   └── ComputeOrderMarginsCommand (artisan)
         ├── LineItemLinker (4-staps product matching: SKU → barcode → alias → title)
@@ -239,7 +268,8 @@ app/Services/
 │                  Product*, PurchaseLadder*, RepeatProbability*, SegmentMovement*
 ├── Forecast/
 │   ├── Demand/    SalesBaselineService, DemandForecastService, CohortProjectionService,
-│   │              CategorySeasonalCalculator, SeasonalIndexCalculator, DemandEventService
+│   │              CategorySeasonalCalculator, SeasonalIndexCalculator, DemandEventService,
+│   │              RegionalForecastAggregator, RegionalCostService
 │   ├── Supply/    ComponentNettingService, ProductionTimelineService, BomExplosionService,
 │   │              PurchaseCalendarService, InventoryHealthService, SupplyProfileAnalyzer
 │   ├── Tracking/  ForecastTrackingService, ScenarioService, GoalService
@@ -448,6 +478,7 @@ DemandEventCategory
 
 ScenarioProductMix
   ├── scenario_id (FK), product_category (ProductCategory enum)
+  ├── region (ForecastRegion enum, nullable — null = global/fallback)
   ├── acq_share, repeat_share, avg_unit_price
   └── belongsTo → Scenario
 
@@ -455,8 +486,16 @@ SupplyProfile
   ├── product_category (unique), lead_time_days, moq, buffer_days
   └── supplier_name, notes
 
+ScenarioAssumption
+  ├── scenario_id (FK), quarter (Q2/Q3/Q4)
+  ├── region (ForecastRegion enum, nullable — null = global/fallback)
+  ├── acq_rate, repeat_rate, repeat_aov
+  ├── retention_index (nullable — overschrijft Scenario.retention_curve_adjustment per regio)
+  └── belongsTo → Scenario
+
 ForecastSnapshot
   ├── scenario_id (FK), year_month, product_category (nullable = totaal)
+  ├── region (ForecastRegion enum, nullable — null = globaal)
   ├── forecasted_units, forecasted_revenue
   ├── actual_units (nullable), actual_revenue (nullable)
   └── belongsTo → Scenario

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\ForecastRegion;
 use App\Enums\ProductCategory;
 use App\Models\Scenario;
 use App\Models\ScenarioProductMix;
@@ -45,12 +46,13 @@ it('loads product mixes from scenario', function () {
     expect($scenario->productMixes)->toHaveCount(2);
 });
 
-it('enforces unique constraint on scenario and category', function () {
+it('enforces unique constraint on scenario, category and region', function () {
     $scenario = Scenario::factory()->create();
 
     ScenarioProductMix::create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::Chain->value,
+        'region' => ForecastRegion::De->value,
         'acq_share' => 0.10,
         'repeat_share' => 0.30,
         'avg_unit_price' => 85.00,
@@ -59,10 +61,35 @@ it('enforces unique constraint on scenario and category', function () {
     expect(fn () => ScenarioProductMix::create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::Chain->value,
+        'region' => ForecastRegion::De->value,
         'acq_share' => 0.20,
         'repeat_share' => 0.40,
         'avg_unit_price' => 90.00,
     ]))->toThrow(UniqueConstraintViolationException::class);
+});
+
+it('allows same category for different regions', function () {
+    $scenario = Scenario::factory()->create();
+
+    ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::Chain->value,
+        'region' => ForecastRegion::De->value,
+        'acq_share' => 0.10,
+        'repeat_share' => 0.30,
+        'avg_unit_price' => 85.00,
+    ]);
+
+    $mix = ScenarioProductMix::create([
+        'scenario_id' => $scenario->id,
+        'product_category' => ProductCategory::Chain->value,
+        'region' => ForecastRegion::Be->value,
+        'acq_share' => 0.15,
+        'repeat_share' => 0.35,
+        'avg_unit_price' => 85.00,
+    ]);
+
+    expect($mix->exists)->toBeTrue();
 });
 
 it('cascades delete when scenario is deleted', function () {

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ForecastRegion;
 use App\Enums\ProductCategory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -20,6 +21,7 @@ class ForecastSnapshot extends Model
     {
         return [
             'product_category' => ProductCategory::class,
+            'region' => ForecastRegion::class,
             'forecasted_units' => 'integer',
             'forecasted_revenue' => 'decimal:2',
             'actual_units' => 'integer',

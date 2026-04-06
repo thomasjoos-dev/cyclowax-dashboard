@@ -2,12 +2,21 @@
 
 namespace App\Services\Forecast\Demand;
 
+use App\Enums\ForecastRegion;
 use App\Models\Scenario;
+use App\Models\ShopifyCustomer;
+use App\Models\ShopifyOrder;
 use App\Services\Analysis\DashboardService;
 use App\Services\Forecast\Tracking\ScenarioService;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Log;
 
 class CohortProjectionService
 {
+    private const MIN_COHORTS_FOR_OWN_CURVE = 3;
+
+    private const MIN_COHORT_SIZE = 10;
+
     public function __construct(
         private DashboardService $dashboard,
         private SalesBaselineService $forecast,
@@ -18,39 +27,130 @@ class CohortProjectionService
      * Derive a baseline retention curve from historical cohort data.
      * Returns cumulative retention % at each month (1-12).
      *
-     * @return array{months: array<int, float>, cohorts_used: int, avg_cohort_size: float}
+     * When a region is provided, it builds a region-specific curve if enough data
+     * exists (≥3 cohorts with ≥10 customers). Otherwise falls back to global.
+     *
+     * @return array{months: array<int, float>, cohorts_used: int, avg_cohort_size: float, source: string}
      */
-    public function retentionCurve(int $cohortMonths = 12): array
+    public function retentionCurve(int $cohortMonths = 12, ?ForecastRegion $region = null): array
     {
-        $data = $this->dashboard->cohortRetention($cohortMonths);
-        $cohorts = $data['cohorts'];
+        if ($region !== null) {
+            $regionalData = $this->buildCohortData($cohortMonths, $region);
+            $qualifiedCohorts = collect($regionalData['cohorts'])
+                ->filter(fn (array $c) => $c['size'] >= self::MIN_COHORT_SIZE);
 
-        if (empty($cohorts)) {
-            return ['months' => [], 'cohorts_used' => 0, 'avg_cohort_size' => 0];
-        }
+            if ($qualifiedCohorts->count() >= self::MIN_COHORTS_FOR_OWN_CURVE) {
+                $curve = $this->averageCurve($regionalData['cohorts']);
 
-        // Average retention across all cohorts for each month
-        $monthSums = [];
-        $monthCounts = [];
-
-        foreach ($cohorts as $cohort) {
-            foreach ($cohort['retention'] as $month => $pct) {
-                $monthSums[$month] = ($monthSums[$month] ?? 0) + $pct;
-                $monthCounts[$month] = ($monthCounts[$month] ?? 0) + 1;
+                return [
+                    ...$curve,
+                    'source' => "regional:{$region->value}",
+                ];
             }
+
+            Log::info("Retention curve fallback to global for {$region->label()}: only {$qualifiedCohorts->count()} qualified cohorts (need ".self::MIN_COHORTS_FOR_OWN_CURVE.')');
+
+            // Fall back to global curve but report it
+            $globalCurve = $this->retentionCurve($cohortMonths);
+
+            return [
+                ...$globalCurve,
+                'source' => 'global_fallback',
+            ];
         }
 
-        $avgRetention = [];
-        foreach ($monthSums as $month => $sum) {
-            $avgRetention[$month] = round($sum / $monthCounts[$month], 2);
-        }
-
-        ksort($avgRetention);
+        // Global: use existing DashboardService path (cached)
+        $data = $this->dashboard->cohortRetention($cohortMonths);
 
         return [
-            'months' => $avgRetention,
-            'cohorts_used' => count($cohorts),
-            'avg_cohort_size' => round(collect($cohorts)->avg('size'), 0),
+            ...$this->averageCurve($data['cohorts']),
+            'source' => 'global',
+        ];
+    }
+
+    /**
+     * Build cohort retention data filtered by forecast region.
+     * A customer belongs to a region based on their first order's shipping country.
+     *
+     * @return array{cohorts: array<int, array{cohort: string, size: int, retention: array<int, float>}>, max_months: int}
+     */
+    public function buildCohortData(int $cohortMonths, ?ForecastRegion $region = null): array
+    {
+        $since = CarbonImmutable::now()->subMonths($cohortMonths)->startOfMonth();
+
+        $customerQuery = ShopifyCustomer::query()
+            ->where('first_order_at', '>=', $since)
+            ->whereNotNull('first_order_at')
+            ->select('id', 'first_order_at');
+
+        if ($region !== null) {
+            // Filter customers by their first order's shipping country
+            $customerQuery->whereExists(function ($query) use ($region) {
+                $query->select('id')
+                    ->from('shopify_orders')
+                    ->whereColumn('shopify_orders.customer_id', 'shopify_customers.id')
+                    ->whereColumn('shopify_orders.ordered_at', 'shopify_customers.first_order_at');
+
+                $countries = $region->countries();
+                if ($countries === []) {
+                    $allMapped = collect(ForecastRegion::cases())
+                        ->filter(fn (ForecastRegion $r) => $r !== ForecastRegion::Row)
+                        ->flatMap(fn (ForecastRegion $r) => $r->countries())
+                        ->all();
+                    $query->whereNotIn('shopify_orders.shipping_country_code', $allMapped);
+                } else {
+                    $query->whereIn('shopify_orders.shipping_country_code', $countries);
+                }
+            });
+        }
+
+        $customers = $customerQuery->get();
+        $customerIds = $customers->pluck('id');
+
+        $orders = ShopifyOrder::query()
+            ->whereIn('customer_id', $customerIds)
+            ->select('customer_id', 'ordered_at')
+            ->get()
+            ->groupBy('customer_id');
+
+        $cohorts = $customers->groupBy(fn ($c) => $c->first_order_at->format('Y-m'));
+
+        $result = [];
+
+        foreach ($cohorts->sortKeys() as $cohortMonth => $cohortCustomers) {
+            $cohortStart = CarbonImmutable::parse($cohortMonth.'-01');
+            $size = $cohortCustomers->count();
+            $monthsSinceCohort = (int) $cohortStart->diffInMonths(CarbonImmutable::now());
+            $maxMonth = min($monthsSinceCohort, 12);
+
+            $retention = [];
+
+            for ($m = 1; $m <= $maxMonth; $m++) {
+                $cutoff = $cohortStart->addMonths($m);
+
+                $retained = $cohortCustomers->filter(function ($customer) use ($orders, $cohortStart, $cutoff) {
+                    $customerOrders = $orders->get($customer->id, collect());
+
+                    return $customerOrders->contains(function ($order) use ($cohortStart, $cutoff) {
+                        $orderDate = CarbonImmutable::parse($order->ordered_at);
+
+                        return $orderDate > $cohortStart->endOfMonth() && $orderDate <= $cutoff->endOfMonth();
+                    });
+                })->count();
+
+                $retention[$m] = $size > 0 ? round(($retained / $size) * 100, 1) : 0;
+            }
+
+            $result[] = [
+                'cohort' => $cohortMonth,
+                'size' => $size,
+                'retention' => $retention,
+            ];
+        }
+
+        return [
+            'cohorts' => $result,
+            'max_months' => 12,
         ];
     }
 
@@ -225,5 +325,41 @@ class CohortProjectionService
         }
 
         return $comparisons;
+    }
+
+    /**
+     * Average retention across all cohorts for each month-age.
+     *
+     * @param  array<int, array{cohort: string, size: int, retention: array<int, float>}>  $cohorts
+     * @return array{months: array<int, float>, cohorts_used: int, avg_cohort_size: float}
+     */
+    private function averageCurve(array $cohorts): array
+    {
+        if (empty($cohorts)) {
+            return ['months' => [], 'cohorts_used' => 0, 'avg_cohort_size' => 0];
+        }
+
+        $monthSums = [];
+        $monthCounts = [];
+
+        foreach ($cohorts as $cohort) {
+            foreach ($cohort['retention'] as $month => $pct) {
+                $monthSums[$month] = ($monthSums[$month] ?? 0) + $pct;
+                $monthCounts[$month] = ($monthCounts[$month] ?? 0) + 1;
+            }
+        }
+
+        $avgRetention = [];
+        foreach ($monthSums as $month => $sum) {
+            $avgRetention[$month] = round($sum / $monthCounts[$month], 2);
+        }
+
+        ksort($avgRetention);
+
+        return [
+            'months' => $avgRetention,
+            'cohorts_used' => count($cohorts),
+            'avg_cohort_size' => round(collect($cohorts)->avg('size'), 0),
+        ];
     }
 }

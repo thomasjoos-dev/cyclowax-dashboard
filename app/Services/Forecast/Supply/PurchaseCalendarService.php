@@ -3,6 +3,7 @@
 namespace App\Services\Forecast\Supply;
 
 use App\Enums\ProductCategory;
+use App\Enums\Warehouse;
 use App\Models\Scenario;
 use App\Models\SupplyProfile;
 use App\Services\Forecast\Demand\DemandForecastService;
@@ -20,14 +21,15 @@ class PurchaseCalendarService
 
     /**
      * Generate a full purchase + production calendar for a scenario year.
+     * Optionally scoped to a single warehouse (aggregates demand from its regions).
      *
      * Flow: demand forecast → SKU mix → BOM explosion → cross-category aggregation → single netting pass → timeline.
      *
-     * @return array{timeline: array<int, array>, summary: array, sku_mix: array, component_demand: array, netting: array}
+     * @return array{timeline: array<int, array>, summary: array, sku_mix: array, component_demand: array, netting: array, warehouse: string|null}
      */
-    public function generate(Scenario $scenario, int $year): array
+    public function generate(Scenario $scenario, int $year, ?Warehouse $warehouse = null): array
     {
-        $forecast = $this->demandForecast->forecastYear($scenario, $year);
+        $forecast = $this->buildForecast($scenario, $year, $warehouse);
         $supplyProfiles = SupplyProfile::all()->keyBy(fn ($p) => $p->product_category->value);
 
         $allTimelines = [];
@@ -155,7 +157,50 @@ class PurchaseCalendarService
             'sku_mix' => $allSkuMixes,
             'component_demand' => $allComponentDemand,
             'netting' => $allNetting,
+            'warehouse' => $warehouse?->value,
         ];
+    }
+
+    /**
+     * Build the demand forecast, optionally scoped to a warehouse's regions.
+     *
+     * @return array<int, array<string, array{units: int, revenue: float}>>
+     */
+    private function buildForecast(Scenario $scenario, int $year, ?Warehouse $warehouse): array
+    {
+        if ($warehouse === null) {
+            return $this->demandForecast->forecastYear($scenario, $year);
+        }
+
+        // Aggregate regional forecasts for all regions in this warehouse
+        $merged = [];
+        for ($m = 1; $m <= 12; $m++) {
+            $merged[$m] = [];
+        }
+
+        foreach ($warehouse->regions() as $region) {
+            $regionalForecast = $this->demandForecast->forecastYear($scenario, $year, $region);
+
+            for ($m = 1; $m <= 12; $m++) {
+                foreach ($regionalForecast[$m] ?? [] as $catValue => $data) {
+                    if (! isset($merged[$m][$catValue])) {
+                        $merged[$m][$catValue] = [
+                            'units' => 0,
+                            'revenue' => 0.0,
+                            'seasonal_index' => $data['seasonal_index'],
+                            'event_boost' => 0.0,
+                            'pull_forward' => 0.0,
+                        ];
+                    }
+                    $merged[$m][$catValue]['units'] += $data['units'];
+                    $merged[$m][$catValue]['revenue'] += $data['revenue'];
+                    $merged[$m][$catValue]['event_boost'] += $data['event_boost'];
+                    $merged[$m][$catValue]['pull_forward'] += $data['pull_forward'];
+                }
+            }
+        }
+
+        return $merged;
     }
 
     /**

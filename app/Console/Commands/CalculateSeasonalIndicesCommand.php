@@ -2,19 +2,32 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\ForecastRegion;
 use App\Services\Forecast\Demand\SeasonalIndexCalculator;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
-#[Signature('seasonal:calculate {--region= : Calculate for a specific country code instead of global}')]
+#[Signature('seasonal:calculate {--region= : Calculate for a specific region (e.g. de, eu_alpine)}')]
 #[Description('Calculate monthly seasonal indices from historical order data')]
 class CalculateSeasonalIndicesCommand extends Command
 {
     public function handle(SeasonalIndexCalculator $calculator): int
     {
-        $region = $this->option('region');
-        $label = $region ?? 'global';
+        $regionValue = $this->option('region');
+        $region = null;
+
+        if ($regionValue) {
+            $region = ForecastRegion::tryFrom($regionValue);
+
+            if (! $region) {
+                $this->error("Unknown region: {$regionValue}. Valid: ".implode(', ', array_map(fn ($r) => $r->value, ForecastRegion::cases())));
+
+                return self::FAILURE;
+            }
+        }
+
+        $label = $region ? $region->label() : 'global';
         $this->info("Calculating seasonal indices ({$label})...");
 
         $normalized = $calculator->calculate($region);

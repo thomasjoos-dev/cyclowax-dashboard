@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ForecastRegion;
 use App\Enums\ProductCategory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -20,6 +21,7 @@ class ScenarioProductMix extends Model
     {
         return [
             'product_category' => ProductCategory::class,
+            'region' => ForecastRegion::class,
             'acq_share' => 'decimal:4',
             'repeat_share' => 'decimal:4',
             'avg_unit_price' => 'decimal:2',

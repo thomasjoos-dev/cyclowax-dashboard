@@ -4,6 +4,8 @@ use App\Services\Forecast\Demand\CategorySeasonalCalculator;
 use App\Services\Forecast\Demand\CohortProjectionService;
 use App\Services\Forecast\Demand\DemandEventService;
 use App\Services\Forecast\Demand\DemandForecastService;
+use App\Services\Forecast\Demand\RegionalCostService;
+use App\Services\Forecast\Demand\RegionalForecastAggregator;
 use App\Services\Forecast\Demand\SalesBaselineService;
 use App\Services\Forecast\Demand\SeasonalIndexCalculator;
 use App\Services\Forecast\SkuMixService;
@@ -24,6 +26,8 @@ $forecastServices = [
     SeasonalIndexCalculator::class,
     DemandEventService::class,
     CohortProjectionService::class,
+    RegionalForecastAggregator::class,
+    RegionalCostService::class,
     ComponentNettingService::class,
     ProductionTimelineService::class,
     BomExplosionService::class,
@@ -44,6 +48,6 @@ it('resolves all forecast services from the container', function () use ($foreca
     }
 });
 
-it('has exactly 16 forecast services registered', function () use ($forecastServices) {
-    expect($forecastServices)->toHaveCount(16);
+it('has exactly 18 forecast services registered', function () use ($forecastServices) {
+    expect($forecastServices)->toHaveCount(18);
 });

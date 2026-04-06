@@ -2,6 +2,7 @@
 
 namespace App\Services\Forecast\Demand;
 
+use App\Enums\ForecastRegion;
 use App\Support\DbDialect;
 use Illuminate\Support\Facades\DB;
 
@@ -12,9 +13,12 @@ class SalesBaselineService
      *
      * @return array{total_rev: int, acq_rev: int, rep_rev: int, new_customers: int, repeat_orders: int}
      */
-    public function periodActuals(string $from, string $to): array
+    public function periodActuals(string $from, string $to, ?ForecastRegion $region = null): array
     {
-        $r = DB::selectOne('
+        $bindings = [$from, $to];
+        $regionFilter = $this->regionWhereClause($region, $bindings);
+
+        $r = DB::selectOne("
             SELECT
                 ROUND(COALESCE(SUM(net_revenue), 0), 0) as total_rev,
                 ROUND(COALESCE(SUM(CASE WHEN is_first_order = 1 THEN net_revenue ELSE 0 END), 0), 0) as acq_rev,
@@ -23,8 +27,9 @@ class SalesBaselineService
                 COALESCE(SUM(CASE WHEN is_first_order = 0 THEN 1 ELSE 0 END), 0) as repeat_orders
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
-                AND financial_status NOT IN (\'voided\', \'refunded\')
-        ', [$from, $to]);
+                AND financial_status NOT IN ('voided', 'refunded')
+                {$regionFilter}
+        ", $bindings);
 
         return [
             'total_rev' => (int) $r->total_rev,
@@ -40,8 +45,11 @@ class SalesBaselineService
      *
      * @return array<int, array{month: string, total_rev: float, acq_rev: float, rep_rev: float, new_customers: int, repeat_orders: int, acq_aov: float, rep_aov: float}>
      */
-    public function monthlyActuals(string $from, string $to): array
+    public function monthlyActuals(string $from, string $to, ?ForecastRegion $region = null): array
     {
+        $bindings = [$from, $to];
+        $regionFilter = $this->regionWhereClause($region, $bindings);
+
         $rows = DB::select('
             SELECT
                 '.DbDialect::yearMonthExpr('ordered_at')." as month,
@@ -53,9 +61,10 @@ class SalesBaselineService
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
                 AND financial_status NOT IN ('voided', 'refunded')
+                {$regionFilter}
             GROUP BY month
             ORDER BY month
-        ", [$from, $to]);
+        ", $bindings);
 
         return array_map(fn ($r) => [
             'month' => $r->month,
@@ -72,17 +81,20 @@ class SalesBaselineService
     /**
      * Total net revenue for a full calendar year.
      */
-    public function yearRevenue(int $year): float
+    public function yearRevenue(int $year, ?ForecastRegion $region = null): float
     {
         $from = $year.'-01-01';
         $to = ($year + 1).'-01-01';
+        $bindings = [$from, $to];
+        $regionFilter = $this->regionWhereClause($region, $bindings);
 
-        return (float) DB::selectOne('
+        return (float) DB::selectOne("
             SELECT ROUND(COALESCE(SUM(net_revenue), 0), 0) as rev
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
-                AND financial_status NOT IN (\'voided\', \'refunded\')
-        ', [$from, $to])->rev;
+                AND financial_status NOT IN ('voided', 'refunded')
+                {$regionFilter}
+        ", $bindings)->rev;
     }
 
     /**
@@ -212,5 +224,38 @@ class SalesBaselineService
         }
 
         return $comparison;
+    }
+
+    /**
+     * Build a WHERE clause fragment to filter orders by forecast region.
+     * Appends country codes to the bindings array.
+     *
+     * @param  array<int, mixed>  $bindings
+     */
+    private function regionWhereClause(?ForecastRegion $region, array &$bindings): string
+    {
+        if ($region === null) {
+            return '';
+        }
+
+        $countries = $region->countries();
+
+        if ($countries === []) {
+            // ROW: exclude all mapped countries
+            $allMapped = collect(ForecastRegion::cases())
+                ->filter(fn (ForecastRegion $r) => $r !== ForecastRegion::Row)
+                ->flatMap(fn (ForecastRegion $r) => $r->countries())
+                ->all();
+
+            $placeholders = implode(',', array_fill(0, count($allMapped), '?'));
+            $bindings = array_merge($bindings, $allMapped);
+
+            return "AND (shipping_country_code NOT IN ({$placeholders}) OR shipping_country_code IS NULL)";
+        }
+
+        $placeholders = implode(',', array_fill(0, count($countries), '?'));
+        $bindings = array_merge($bindings, $countries);
+
+        return "AND shipping_country_code IN ({$placeholders})";
     }
 }

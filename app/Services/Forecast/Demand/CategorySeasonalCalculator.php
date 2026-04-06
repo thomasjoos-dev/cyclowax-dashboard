@@ -3,6 +3,7 @@
 namespace App\Services\Forecast\Demand;
 
 use App\Enums\ForecastGroup;
+use App\Enums\ForecastRegion;
 use App\Enums\ProductCategory;
 use App\Models\SeasonalIndex;
 use App\Support\DbDialect;
@@ -21,7 +22,7 @@ class CategorySeasonalCalculator
      *
      * @return array<int, float>|null Normalized indices keyed by month (1-12)
      */
-    public function calculateForCategory(ProductCategory $category, ?string $region = null): ?array
+    public function calculateForCategory(ProductCategory $category, ?ForecastRegion $region = null): ?array
     {
         $monthlyCounts = $this->getMonthlyCategoryCounts($category, $region);
 
@@ -35,9 +36,11 @@ class CategorySeasonalCalculator
             return null;
         }
 
+        $regionValue = $region?->value;
+
         foreach ($normalized as $month => $indexValue) {
             SeasonalIndex::updateOrCreate(
-                ['month' => $month, 'region' => $region, 'product_category' => $category->value],
+                ['month' => $month, 'region' => $regionValue, 'product_category' => $category->value],
                 ['index_value' => $indexValue, 'source' => 'calculated', 'forecast_group' => null],
             );
         }
@@ -51,7 +54,7 @@ class CategorySeasonalCalculator
      *
      * @return array<int, float>|null
      */
-    public function calculateForGroup(ForecastGroup $group, ?string $region = null): ?array
+    public function calculateForGroup(ForecastGroup $group, ?ForecastRegion $region = null): ?array
     {
         $categoryIndices = [];
         $categoryWeights = [];
@@ -87,9 +90,11 @@ class CategorySeasonalCalculator
             $groupIndices[$month] = round($weighted / $totalWeight, 4);
         }
 
+        $regionValue = $region?->value;
+
         foreach ($groupIndices as $month => $indexValue) {
             SeasonalIndex::updateOrCreate(
-                ['month' => $month, 'region' => $region, 'product_category' => null],
+                ['month' => $month, 'region' => $regionValue, 'product_category' => null],
                 ['index_value' => $indexValue, 'source' => 'calculated', 'forecast_group' => $group->value],
             );
         }
@@ -102,7 +107,7 @@ class CategorySeasonalCalculator
      *
      * @return array{categories: array<string, array<int, float>|null>, groups: array<string, array<int, float>|null>}
      */
-    public function calculateAll(?string $region = null): array
+    public function calculateAll(?ForecastRegion $region = null): array
     {
         $categories = [];
         foreach (ProductCategory::cases() as $category) {
@@ -124,8 +129,9 @@ class CategorySeasonalCalculator
      * Resolve the best available seasonal index for a category and month,
      * applying maturity-based fallback logic.
      */
-    public function resolveIndex(ProductCategory $category, int $month, ?string $region = null): float
+    public function resolveIndex(ProductCategory $category, int $month, ?ForecastRegion $region = null): float
     {
+        $regionValue = $region?->value;
         $maturityMonths = $this->productMaturityMonths($category);
 
         if ($maturityMonths >= 12) {
@@ -133,7 +139,7 @@ class CategorySeasonalCalculator
             $index = SeasonalIndex::query()
                 ->forCategory($category)
                 ->where('month', $month)
-                ->where('region', $region)
+                ->where('region', $regionValue)
                 ->first();
 
             if ($index) {
@@ -146,14 +152,14 @@ class CategorySeasonalCalculator
             $ownIndex = SeasonalIndex::query()
                 ->forCategory($category)
                 ->where('month', $month)
-                ->where('region', $region)
+                ->where('region', $regionValue)
                 ->first();
 
             $group = $category->forecastGroup();
             $groupIndex = $group ? SeasonalIndex::query()
                 ->forGroup($group)
                 ->where('month', $month)
-                ->where('region', $region)
+                ->where('region', $regionValue)
                 ->first() : null;
 
             if ($ownIndex && $groupIndex) {
@@ -176,7 +182,7 @@ class CategorySeasonalCalculator
             $groupIndex = SeasonalIndex::query()
                 ->forGroup($group)
                 ->where('month', $month)
-                ->where('region', $region)
+                ->where('region', $regionValue)
                 ->first();
 
             if ($groupIndex) {
@@ -184,12 +190,28 @@ class CategorySeasonalCalculator
             }
         }
 
-        // Ultimate fallback: global index
+        // Fallback: try global index for this region, then absolute global
+        if ($region !== null) {
+            $globalRegionIndex = SeasonalIndex::query()
+                ->global()
+                ->whereNull('product_category')
+                ->whereNull('forecast_group')
+                ->where('month', $month)
+                ->where('region', $regionValue)
+                ->first();
+
+            if ($globalRegionIndex) {
+                return (float) $globalRegionIndex->index_value;
+            }
+        }
+
+        // Ultimate fallback: global index (no region)
         $globalIndex = SeasonalIndex::query()
             ->global()
             ->whereNull('product_category')
             ->whereNull('forecast_group')
             ->where('month', $month)
+            ->whereNull('region')
             ->first();
 
         return $globalIndex ? (float) $globalIndex->index_value : 1.0;
@@ -229,7 +251,7 @@ class CategorySeasonalCalculator
      *
      * @return Collection<int, object{month: int, year: string, order_count: int}>
      */
-    private function getMonthlyCategoryCounts(ProductCategory $category, ?string $region = null): Collection
+    private function getMonthlyCategoryCounts(ProductCategory $category, ?ForecastRegion $region = null): Collection
     {
         $query = DB::table('shopify_line_items')
             ->join('products', 'shopify_line_items.product_id', '=', 'products.id')
@@ -246,8 +268,19 @@ class CategorySeasonalCalculator
             });
         }
 
-        if ($region) {
-            $query->where('shopify_orders.shipping_country_code', $region);
+        if ($region !== null) {
+            $countries = $region->countries();
+
+            if ($countries === []) {
+                $allMapped = collect(ForecastRegion::cases())
+                    ->filter(fn (ForecastRegion $r) => $r !== ForecastRegion::Row)
+                    ->flatMap(fn (ForecastRegion $r) => $r->countries())
+                    ->all();
+
+                $query->whereNotIn('shopify_orders.shipping_country_code', $allMapped);
+            } else {
+                $query->whereIn('shopify_orders.shipping_country_code', $countries);
+            }
         }
 
         return $query

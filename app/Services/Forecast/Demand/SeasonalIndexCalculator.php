@@ -2,6 +2,7 @@
 
 namespace App\Services\Forecast\Demand;
 
+use App\Enums\ForecastRegion;
 use App\Models\SeasonalIndex;
 use App\Support\DbDialect;
 use Illuminate\Support\Collection;
@@ -14,7 +15,7 @@ class SeasonalIndexCalculator
      *
      * @return array<int, float>|null Normalized indices keyed by month (1-12), or null if no data
      */
-    public function calculate(?string $region = null): ?array
+    public function calculate(?ForecastRegion $region = null): ?array
     {
         $monthlyCounts = $this->getMonthlyOrderCounts($region);
 
@@ -24,9 +25,11 @@ class SeasonalIndexCalculator
 
         $normalized = $this->normalize($monthlyCounts);
 
+        $regionValue = $region?->value;
+
         foreach ($normalized as $month => $indexValue) {
             SeasonalIndex::updateOrCreate(
-                ['month' => $month, 'region' => $region],
+                ['month' => $month, 'region' => $regionValue],
                 ['index_value' => $indexValue, 'source' => 'calculated'],
             );
         }
@@ -68,7 +71,7 @@ class SeasonalIndexCalculator
     /**
      * @return Collection<int, object{month: int, year: string, order_count: int}>
      */
-    public function getMonthlyOrderCounts(?string $region): Collection
+    public function getMonthlyOrderCounts(?ForecastRegion $region): Collection
     {
         $query = DB::table('shopify_orders')
             ->whereNotIn('financial_status', ['voided', 'refunded'])
@@ -79,8 +82,20 @@ class SeasonalIndexCalculator
             ->orderBy('year')
             ->orderBy('month');
 
-        if ($region) {
-            $query->where('country_code', $region);
+        if ($region !== null) {
+            $countries = $region->countries();
+
+            if ($countries === []) {
+                // ROW: exclude all mapped countries
+                $allMapped = collect(ForecastRegion::cases())
+                    ->filter(fn (ForecastRegion $r) => $r !== ForecastRegion::Row)
+                    ->flatMap(fn (ForecastRegion $r) => $r->countries())
+                    ->all();
+
+                $query->whereNotIn('shipping_country_code', $allMapped);
+            } else {
+                $query->whereIn('shipping_country_code', $countries);
+            }
         }
 
         return $query->get();
