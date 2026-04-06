@@ -233,6 +233,66 @@ class CohortProjectionService
     }
 
     /**
+     * Calculate predicted 12-month LTV from retention curve and age-aware AOV.
+     * Combines first-order AOV + Σ(incremental_retention × age-appropriate AOV).
+     *
+     * @return array{predicted_ltv_12m: float, first_order_aov: float, predicted_repeat_value: float, retention_curve_source: string}
+     */
+    public function predictedLtv(?ForecastRegion $region = null, int $months = 12): array
+    {
+        $curveData = $this->retentionCurve($months, $region);
+        $retentionCurve = $curveData['months'];
+
+        if (empty($retentionCurve)) {
+            return [
+                'predicted_ltv_12m' => 0,
+                'first_order_aov' => 0,
+                'predicted_repeat_value' => 0,
+                'retention_curve_source' => $curveData['source'] ?? 'none',
+            ];
+        }
+
+        // Get first-order AOV from last 12 months
+        $year = (int) date('Y');
+        $acqActuals = $this->forecast->monthlyActuals(
+            ($year - 1).'-01-01',
+            $year.'-01-01',
+            $region,
+        );
+        $totalAcqRev = collect($acqActuals)->sum('acq_rev');
+        $totalNewCustomers = collect($acqActuals)->sum('new_customers');
+        $firstOrderAov = $totalNewCustomers > 0 ? round($totalAcqRev / $totalNewCustomers, 2) : 0;
+
+        // Get age-aware repeat AOV
+        $aovByOrder = $this->forecast->repeatAovByOrderNumber($region);
+
+        // Sum incremental retention × effective AOV over the projection horizon
+        $predictedRepeatValue = 0.0;
+        for ($m = 1; $m <= $months; $m++) {
+            $currentRetention = $this->monthlyRetentionRate($m, $retentionCurve);
+            $previousRetention = $m > 1 ? $this->monthlyRetentionRate($m - 1, $retentionCurve) : 0;
+
+            $incrementalPct = max(0, $currentRetention - $previousRetention);
+
+            // Age-aware: young cohorts → 2nd-order AOV, mature → 3rd+ AOV
+            $effectiveAov = $m <= 3
+                ? $aovByOrder['second_order']
+                : $aovByOrder['third_plus'];
+
+            $predictedRepeatValue += ($incrementalPct / 100) * $effectiveAov;
+        }
+
+        $predictedRepeatValue = round($predictedRepeatValue, 2);
+
+        return [
+            'predicted_ltv_12m' => round($firstOrderAov + $predictedRepeatValue, 2),
+            'first_order_aov' => $firstOrderAov,
+            'predicted_repeat_value' => $predictedRepeatValue,
+            'retention_curve_source' => $curveData['source'] ?? 'global',
+        ];
+    }
+
+    /**
      * Project a full year by combining quarterly cohorts with a scenario.
      *
      * @return array{quarters: array, year_total: float, year_from_repeats: float}

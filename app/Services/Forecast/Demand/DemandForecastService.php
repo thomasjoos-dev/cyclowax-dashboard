@@ -10,6 +10,7 @@ use App\Exceptions\InvalidProductMixException;
 use App\Models\DemandEvent;
 use App\Models\Scenario;
 use App\Models\ScenarioProductMix;
+use App\Services\Analysis\CustomerValueService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -20,6 +21,7 @@ class DemandForecastService
         private CategorySeasonalCalculator $seasonalCalculator,
         private DemandEventService $demandEventService,
         private CohortProjectionService $cohortProjectionService,
+        private CustomerValueService $customerValueService,
     ) {}
 
     /**
@@ -55,8 +57,12 @@ class DemandForecastService
         $dynamicAov = $this->forecastService->repeatAovByQuarter($year, $region);
         $aovByOrderNumber = $this->forecastService->repeatAovByOrderNumber($region);
 
+        // Dynamic acquisition AOV: quarterly first-order AOV from rolling actuals
+        $dynamicAcqAov = $this->forecastService->acqAovByQuarter($year, $region);
+
         // Validate AOV consistency with product mix
         $this->validateAovConsistency($dynamicAov, $assumptions, $mixes, $region);
+        $this->validateAcqAovConsistency($dynamicAcqAov, $mixes, $region);
 
         $forecast = [];
         $cumulativeCustomers = 0;
@@ -92,8 +98,18 @@ class DemandForecastService
                 $monthlyCohorts[$month] = $newCustomers;
             } elseif ($qa) {
                 $baseQ1 = $baselineByMonth[sprintf('%d-%02d', $year - 1, $month)] ?? $baseline;
-                $acqRevenue = $baseQ1['acq_rev'] * $qa['acq_rate'];
                 $newCustomers = (int) round($baseQ1['new_customers'] * $qa['acq_rate']);
+
+                // Acquisition revenue: customers × dynamic AOV (normalized, discount-adjusted)
+                $quarterAcqAov = $dynamicAcqAov[$quarter] ?? null;
+                $effectiveAcqAov = $quarterAcqAov['normalized'] ?? 0;
+                if ($effectiveAcqAov <= 0) {
+                    // Fallback: implied AOV from baseline
+                    $effectiveAcqAov = $baseQ1['new_customers'] > 0
+                        ? $baseQ1['acq_rev'] / $baseQ1['new_customers']
+                        : 0;
+                }
+                $acqRevenue = $newCustomers * $effectiveAcqAov;
                 $cumulativeCustomers += $newCustomers;
                 $monthlyCohorts[$month] = $newCustomers;
 
@@ -507,6 +523,122 @@ class DemandForecastService
                 }
             }
         }
+    }
+
+    /**
+     * Validate that acquisition AOV is consistent with the product mix.
+     * Compares dynamic acq AOV against implied AOV from Σ(acq_share × avg_unit_price).
+     *
+     * @param  array<string, array{actual: float, normalized: float}>  $dynamicAcqAov
+     * @param  array<string, ScenarioProductMix>  $mixes
+     */
+    private function validateAcqAovConsistency(array $dynamicAcqAov, array $mixes, ?ForecastRegion $region = null): void
+    {
+        if (empty($mixes)) {
+            return;
+        }
+
+        $impliedAov = 0.0;
+        foreach ($mixes as $mix) {
+            $impliedAov += (float) $mix->acq_share * (float) $mix->avg_unit_price;
+        }
+
+        foreach (['Q2', 'Q3', 'Q4'] as $quarter) {
+            $quarterAov = $dynamicAcqAov[$quarter] ?? null;
+            $actualAov = $quarterAov['normalized'] ?? null;
+            if ($actualAov === null || $actualAov <= 0 || $impliedAov <= 0) {
+                continue;
+            }
+
+            $delta = abs($actualAov - $impliedAov) / $actualAov;
+            if ($delta > 0.25) {
+                Log::warning('Acquisition AOV consistency warning: acq_aov and product mix diverge', [
+                    'quarter' => $quarter,
+                    'region' => $region?->value ?? 'global',
+                    'acq_aov' => $actualAov,
+                    'implied_aov_from_mix' => round($impliedAov, 2),
+                    'delta_pct' => round($delta * 100, 1),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Validate that forecast-implied LTV is consistent with historical and predicted LTV.
+     * Compares three LTV signals: forecast-implied, historical, and curve-predicted.
+     * Logs a warning if forecast-implied diverges >25% from historical.
+     *
+     * @return array{forecast_implied_ltv: float, historical_avg_ltv: float, predicted_ltv: float, delta_pct: float, warning: string|null}
+     */
+    public function validateLtvConsistency(Scenario $scenario, int $year, ?ForecastRegion $region = null): array
+    {
+        // Forecast-implied LTV: total revenue / total new customers
+        $total = $this->totalForecast($scenario, $year, $region);
+        $yearRevenue = $total['year_total']['revenue'];
+
+        // Count new customers from Q1 baseline + Q2-Q4 grown
+        $baselineByMonth = $this->getBaselineByMonth($year, false, $region);
+        $assumptions = $this->indexAssumptionsByQuarter($scenario, $region);
+        $totalNewCustomers = 0;
+
+        for ($month = 1; $month <= 12; $month++) {
+            $quarter = 'Q'.ceil($month / 3);
+            $yearMonth = sprintf('%d-%02d', $year, $month);
+            $baseline = $baselineByMonth[$yearMonth] ?? null;
+
+            if ($baseline === null) {
+                continue;
+            }
+
+            if ($quarter === 'Q1') {
+                $totalNewCustomers += $baseline['new_customers'];
+            } else {
+                $qa = $assumptions[$quarter] ?? null;
+                if ($qa) {
+                    $baseQ1 = $baselineByMonth[sprintf('%d-%02d', $year - 1, $month)] ?? $baseline;
+                    $totalNewCustomers += (int) round($baseQ1['new_customers'] * $qa['acq_rate']);
+                }
+            }
+        }
+
+        $forecastImpliedLtv = $totalNewCustomers > 0 ? round($yearRevenue / $totalNewCustomers, 2) : 0;
+
+        // Historical LTV: average across recent cohorts
+        $historicalCohorts = $this->customerValueService->ltvByCohort(($year - 2).'-01-01');
+        $historicalAvgLtv = ! empty($historicalCohorts)
+            ? round(collect($historicalCohorts)->avg('avg_ltv'), 2)
+            : 0;
+
+        // Predicted LTV from retention curve
+        $predictedLtv = $this->cohortProjectionService->predictedLtv($region);
+        $predictedLtvValue = $predictedLtv['predicted_ltv_12m'];
+
+        // Calculate divergence
+        $deltaPct = $historicalAvgLtv > 0
+            ? round(abs($forecastImpliedLtv - $historicalAvgLtv) / $historicalAvgLtv * 100, 1)
+            : 0;
+
+        $warning = null;
+        if ($historicalAvgLtv > 0 && $deltaPct > 25) {
+            $direction = $forecastImpliedLtv > $historicalAvgLtv ? 'higher' : 'lower';
+            $warning = "Forecast-implied LTV is {$deltaPct}% {$direction} than historical average";
+
+            Log::warning('LTV consistency warning: forecast-implied LTV diverges from historical', [
+                'region' => $region?->value ?? 'global',
+                'forecast_implied_ltv' => $forecastImpliedLtv,
+                'historical_avg_ltv' => $historicalAvgLtv,
+                'predicted_ltv' => $predictedLtvValue,
+                'delta_pct' => $deltaPct,
+            ]);
+        }
+
+        return [
+            'forecast_implied_ltv' => $forecastImpliedLtv,
+            'historical_avg_ltv' => $historicalAvgLtv,
+            'predicted_ltv' => $predictedLtvValue,
+            'delta_pct' => $deltaPct,
+            'warning' => $warning,
+        ];
     }
 
     /**

@@ -228,6 +228,82 @@ class SalesBaselineService
     }
 
     /**
+     * Calculate acquisition AOV per quarter from rolling actuals.
+     * Same pattern as repeatAovByQuarter: 6-month rolling window, both actual and normalized.
+     * Used to make acquisition revenue = customers × AOV instead of lump revenue × growth rate.
+     *
+     * @return array<string, array{actual: float, normalized: float}> Quarter => AOV variants
+     */
+    public function acqAovByQuarter(int $year, ?ForecastRegion $region = null): array
+    {
+        $quarterMonths = [
+            'Q1' => [1, 2, 3],
+            'Q2' => [4, 5, 6],
+            'Q3' => [7, 8, 9],
+            'Q4' => [10, 11, 12],
+        ];
+
+        $from = ($year - 1).'-07-01';
+        $to = ($year + 1).'-01-01';
+        $bindings = [$from, $to];
+        $regionFilter = $this->regionWhereClause($region, $bindings);
+
+        $monthExpr = DbDialect::monthExpr('ordered_at');
+        $normalizedExpr = $this->discountAdjustedRevenueExpr();
+
+        $rows = DB::select("
+            SELECT
+                {$monthExpr} as order_month,
+                SUM(net_revenue) as total_rev,
+                SUM({$normalizedExpr}) as normalized_rev,
+                COUNT(*) as order_count
+            FROM shopify_orders
+            WHERE ordered_at >= ? AND ordered_at < ?
+                AND is_first_order IS TRUE
+                AND financial_status NOT IN ('voided', 'refunded')
+                {$regionFilter}
+            GROUP BY order_month
+        ", $bindings);
+
+        $monthlyData = collect($rows)->keyBy('order_month');
+
+        $totalRev = $monthlyData->sum('total_rev');
+        $totalNormalized = $monthlyData->sum('normalized_rev');
+        $totalOrders = $monthlyData->sum('order_count');
+        $fallbackActual = $totalOrders > 0 ? round($totalRev / $totalOrders, 2) : 0;
+        $fallbackNormalized = $totalOrders > 0 ? round($totalNormalized / $totalOrders, 2) : 0;
+
+        $result = [];
+        foreach ($quarterMonths as $quarter => $months) {
+            $qRev = 0;
+            $qNormalized = 0;
+            $qOrders = 0;
+
+            $windowMonths = array_unique(array_merge(
+                $months,
+                [min(12, max(1, $months[0] - 1))],
+                [min(12, max(1, end($months) + 1))],
+            ));
+
+            foreach ($windowMonths as $m) {
+                $data = $monthlyData->get($m);
+                if ($data) {
+                    $qRev += (float) $data->total_rev;
+                    $qNormalized += (float) $data->normalized_rev;
+                    $qOrders += (int) $data->order_count;
+                }
+            }
+
+            $result[$quarter] = [
+                'actual' => $qOrders >= 5 ? round($qRev / $qOrders, 2) : $fallbackActual,
+                'normalized' => $qOrders >= 5 ? round($qNormalized / $qOrders, 2) : $fallbackNormalized,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
      * Calculate repeat AOV per quarter from rolling actuals.
      * Uses a 6-month rolling window centred on each quarter for seasonal accuracy.
      * Falls back to 12-month average if a quarter has insufficient data.
