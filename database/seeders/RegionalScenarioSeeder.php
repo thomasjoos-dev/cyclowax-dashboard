@@ -236,7 +236,7 @@ class RegionalScenarioSeeder extends Seeder
 
         $this->applyCountryFilter($query, $countries, 'shopify_orders');
 
-        $rows = $query->selectRaw("products.product_category, CASE WHEN shopify_orders.is_first_order = 1 THEN 'acq' ELSE 'rep' END as order_type, SUM(shopify_line_items.quantity * shopify_line_items.price) as revenue")
+        $rows = $query->selectRaw("products.product_category, CASE WHEN shopify_orders.is_first_order = true THEN 'acq' ELSE 'rep' END as order_type, SUM(shopify_line_items.quantity * shopify_line_items.price) as revenue")
             ->groupBy('products.product_category', 'order_type')
             ->get();
 
