@@ -118,20 +118,32 @@ Demand Forecast System
   │     │     ├── Optioneel per ForecastRegion (--region / --all-regions)
   │     │     ├── validateProductMixes() — shares in [0,1], som per type 0.95–1.05
   │     │     ├── Q1 completeness check — exception bij 0 maanden, warning bij <3
+  │     │     ├── detectBaselineAnomalies() — Q1 maand >30% afwijking van vorig jaar → warning
   │     │     ├── Regionale baseline via SalesBaselineService (shipping_country_code filter)
   │     │     ├── Regionale assumptions: per regio per kwartaal, fallback naar global (region=null)
   │     │     ├── Regionale product mixes: per regio per categorie, fallback naar global
-  │     │     ├── baseline (vorig jaar) × scenario growth × product mix × seasonal index
+  │     │     ├── AOV pipeline:
+  │     │     │     ├── repeatAovByQuarter() → {actual, normalized} per kwartaal (rolling 6m window)
+  │     │     │     ├── acqAovByQuarter() → {actual, normalized} per kwartaal (first orders)
+  │     │     │     ├── repeatAovByOrderNumber() → 2nd order vs 3rd+ AOV split (age-aware)
+  │     │     │     ├── Normalized = net_revenue + discounts (discount-corrected)
+  │     │     │     ├── Q2-Q4 acq revenue = newCustomers × dynamicAcqAov (niet lump × growth)
+  │     │     │     ├── validateAovConsistency() — repeat AOV vs product mix, warning >25%
+  │     │     │     └── validateAcqAovConsistency() — acq AOV vs product mix, warning >25%
   │     │     ├── Repeat model: cohort-based (primair) of flat (fallback)
   │     │     │     ├── Cohort: per maand door alle eerdere cohorten, incrementele retentie via curve delta
+  │     │     │     ├── Age-aware AOV: age ≤3 → 2nd-order AOV, age >3 → 3rd+ AOV
   │     │     │     ├── CohortProjectionService.retentionCurve(?ForecastRegion) → regionale of globale curve
   │     │     │     │     ├── Standalone regio's (DE/BE/US/GB/NL): eigen curve als ≥3 cohorten met ≥10 klanten
   │     │     │     │     └── Gegroepeerde regio's: fallback naar globale curve met eigen volumes
+  │     │     │     ├── predictedLtv() — 12m LTV uit retentiecurve × age-aware AOV
   │     │     │     ├── monthlyRetentionRate() — lineaire interpolatie tussen bekende datapunten
   │     │     │     ├── retention_index (per regio, op assumptions) overschrijft Scenario.retention_curve_adjustment
   │     │     │     └── Flat fallback: cumulativeCustomers × repeat_rate / 3 (als geen curve beschikbaar)
   │     │     ├── + DemandEvent boost (geplande campagnes/launches — globaal, niet per regio)
   │     │     ├── - Pull-forward deductie (alleen Getting Started categorieën)
+  │     │     ├── validateEventUplift() — warning als uplift >50% van seizoensbaseline
+  │     │     ├── validateLtvConsistency() — forecast-implied vs historisch vs predicted LTV
   │     │     └── → units + revenue per ProductCategory per maand (per regio of globaal)
   │     ├── RegionalForecastAggregator (aggregatie laag)
   │     │     ├── forecastAllRegions() — loopt over 9 regio's, sommeert, bewaart breakdown
@@ -147,7 +159,8 @@ Demand Forecast System
   │           ├── NULL-safe upsert — werkt op SQLite (NULL ≠ NULL) én PostgreSQL (NULL = NULL)
   │           ├── updateActuals(?ForecastRegion) — werkelijke cijfers per regio
   │           ├── monthlyVariance(?ForecastRegion) — forecast vs actuals + variance%
-  │           └── paceProjection(?ForecastRegion) — bijgestelde jaarprojectie per regio
+  │           ├── paceProjection(?ForecastRegion) — bijgestelde jaarprojectie per regio
+  │           └── decomposeVariance() — volume/prijs/mix effect uitsplitsing per maand
   ├── UpdateForecastActualsCommand (forecast:update-actuals {YYYY-MM})
   │     └── ForecastTrackingService.updateActuals()
   └── InventoryHealthService
