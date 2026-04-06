@@ -79,7 +79,9 @@ class ScenarioProductMixSeeder extends Seeder
     }
 
     /**
-     * Calculate average unit price per forecastable product category.
+     * Calculate volume-weighted average unit price per forecastable product category.
+     * Uses SUM(price × quantity) / SUM(quantity) instead of AVG(price) to correctly
+     * weight by actual sales volume rather than treating each line item equally.
      *
      * @return array<string, float>
      */
@@ -91,7 +93,7 @@ class ScenarioProductMixSeeder extends Seeder
             ->where('shopify_orders.ordered_at', '>=', '2025-01-01')
             ->whereNotIn('shopify_orders.financial_status', ['voided', 'refunded'])
             ->whereNotNull('products.product_category')
-            ->selectRaw('products.product_category, AVG(shopify_line_items.price) as avg_price')
+            ->selectRaw('products.product_category, SUM(shopify_line_items.price * shopify_line_items.quantity) / NULLIF(SUM(shopify_line_items.quantity), 0) as avg_price')
             ->groupBy('products.product_category')
             ->get();
 

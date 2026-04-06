@@ -49,6 +49,13 @@ class DemandForecastService
         // Curve adjustment: use regional retention_index if set, else global
         $curveAdjustment = $this->resolveRetentionAdjustment($scenario, $assumptions);
 
+        // Dynamic AOV: quarterly repeat AOV from rolling actuals, with scenario assumption as fallback
+        $dynamicAov = $this->forecastService->repeatAovByQuarter($year, $region);
+        $aovByOrderNumber = $this->forecastService->repeatAovByOrderNumber($region);
+
+        // Validate AOV consistency with product mix
+        $this->validateAovConsistency($dynamicAov, $assumptions, $mixes, $region);
+
         $forecast = [];
         $cumulativeCustomers = 0;
         $monthlyCohorts = []; // month → new customer count for cohort tracking
@@ -67,6 +74,12 @@ class DemandForecastService
             // Get quarterly growth assumptions
             $qa = $assumptions[$quarter] ?? null;
 
+            // Resolve repeat AOV: dynamic (quarterly actuals) → scenario assumption fallback
+            $quarterRepeatAov = $dynamicAov[$quarter] ?? $qa['repeat_aov'] ?? 0;
+            if ($quarterRepeatAov <= 0 && $qa) {
+                $quarterRepeatAov = $qa['repeat_aov'];
+            }
+
             if ($quarter === 'Q1') {
                 // Q1: use actuals directly, distribute via product mix
                 $acqRevenue = $baseline['acq_rev'];
@@ -83,12 +96,12 @@ class DemandForecastService
 
                 if ($useCohortModel) {
                     $repRevenue = $this->calculateCohortRepeatRevenue(
-                        $monthlyCohorts, $month, $qa['repeat_aov'], $retentionCurve, $curveAdjustment,
+                        $monthlyCohorts, $month, $quarterRepeatAov, $retentionCurve, $curveAdjustment, $aovByOrderNumber,
                     );
                 } else {
                     // Flat fallback: original model
                     $repOrders = $cumulativeCustomers * $qa['repeat_rate'] / 3;
-                    $repRevenue = $repOrders * $qa['repeat_aov'];
+                    $repRevenue = $repOrders * $quarterRepeatAov;
                 }
             } else {
                 $forecast[$month] = [];
@@ -363,6 +376,47 @@ class DemandForecastService
     }
 
     /**
+     * Validate that repeat AOV is consistent with the product mix.
+     * Logs a warning if the implied AOV from product shares × unit prices diverges
+     * more than 25% from the actual repeat AOV — indicating the mix and AOV are out of sync.
+     *
+     * @param  array<string, float>  $dynamicAov  Quarterly dynamic AOV
+     * @param  array<string, array{repeat_aov: float}>  $assumptions  Scenario assumptions by quarter
+     * @param  array<string, ScenarioProductMix>  $mixes  Product mixes by category
+     */
+    private function validateAovConsistency(array $dynamicAov, array $assumptions, array $mixes, ?ForecastRegion $region = null): void
+    {
+        if (empty($mixes)) {
+            return;
+        }
+
+        // Calculate implied AOV from product mix: Σ(repeat_share × avg_unit_price)
+        $impliedAov = 0.0;
+        foreach ($mixes as $mix) {
+            $impliedAov += (float) $mix->repeat_share * (float) $mix->avg_unit_price;
+        }
+
+        // Compare against each quarter's AOV
+        foreach (['Q2', 'Q3', 'Q4'] as $quarter) {
+            $actualAov = $dynamicAov[$quarter] ?? ($assumptions[$quarter]['repeat_aov'] ?? null);
+            if ($actualAov === null || $actualAov <= 0 || $impliedAov <= 0) {
+                continue;
+            }
+
+            $delta = abs($actualAov - $impliedAov) / $actualAov;
+            if ($delta > 0.25) {
+                Log::warning('AOV consistency warning: repeat_aov and product mix diverge', [
+                    'quarter' => $quarter,
+                    'region' => $region?->value ?? 'global',
+                    'repeat_aov' => $actualAov,
+                    'implied_aov_from_mix' => round($impliedAov, 2),
+                    'delta_pct' => round($delta * 100, 1),
+                ]);
+            }
+        }
+    }
+
+    /**
      * Validate that product mix shares are within acceptable ranges.
      *
      * @param  Collection<string, ScenarioProductMix>  $mixes
@@ -403,12 +457,15 @@ class DemandForecastService
 
     /**
      * Calculate repeat revenue for a forecast month using cohort-based retention.
+     * Uses age-aware AOV: young cohorts (age 1-3) use 2nd-order AOV (kits/heaters),
+     * older cohorts use 3rd+ AOV (consumables shift).
      *
      * @param  array<int, int>  $cohorts  Month number → new customer count
      * @param  int  $forecastMonth  The month (1-12) to calculate repeat for
-     * @param  float  $repeatAov  Average repeat order value
+     * @param  float  $repeatAov  Average repeat order value (seasonal, used as fallback)
      * @param  array<int, float>  $retentionCurve  Month → cumulative retention %
      * @param  float  $curveAdjustment  Scalar to shift the curve (1.0 = no change)
+     * @param  array{second_order: float, third_plus: float, overall: float}|null  $aovByOrderNumber  Age-aware AOV split
      */
     private function calculateCohortRepeatRevenue(
         array $cohorts,
@@ -416,6 +473,7 @@ class DemandForecastService
         float $repeatAov,
         array $retentionCurve,
         float $curveAdjustment = 1.0,
+        ?array $aovByOrderNumber = null,
     ): float {
         $totalRepeatRevenue = 0.0;
 
@@ -436,7 +494,15 @@ class DemandForecastService
             $incrementalPct = max(0, $currentRetention - $previousRetention);
             $incrementalRepeaters = $cohortSize * $incrementalPct / 100;
 
-            $totalRepeatRevenue += $incrementalRepeaters * $repeatAov;
+            // Age-aware AOV: young cohorts → 2nd-order AOV, mature → 3rd+ AOV
+            $effectiveAov = $repeatAov;
+            if ($aovByOrderNumber !== null) {
+                $effectiveAov = $age <= 3
+                    ? $aovByOrderNumber['second_order']
+                    : $aovByOrderNumber['third_plus'];
+            }
+
+            $totalRepeatRevenue += $incrementalRepeaters * $effectiveAov;
         }
 
         return round($totalRepeatRevenue, 2);

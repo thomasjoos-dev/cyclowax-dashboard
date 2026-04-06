@@ -373,6 +373,10 @@ it('logs warning when Q1 data is partial', function () {
         ->once()
         ->withArgs(fn (string $msg) => str_contains($msg, 'Incomplete Q1'));
 
+    Log::shouldReceive('warning')
+        ->zeroOrMoreTimes()
+        ->withArgs(fn (string $msg) => str_contains($msg, 'AOV consistency'));
+
     $service = app(DemandForecastService::class);
     $forecast = $service->forecastYear($scenario->fresh(), 2026);
 

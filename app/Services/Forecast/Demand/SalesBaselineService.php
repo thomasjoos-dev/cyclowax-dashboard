@@ -227,6 +227,147 @@ class SalesBaselineService
     }
 
     /**
+     * Calculate repeat AOV per quarter from rolling actuals.
+     * Uses a 6-month rolling window centred on each quarter for seasonal accuracy.
+     * Falls back to 12-month average if a quarter has insufficient data.
+     *
+     * @return array<string, float> Quarter label => repeat AOV (e.g. ['Q1' => 87.50, 'Q2' => 92.30, ...])
+     */
+    public function repeatAovByQuarter(int $year, ?ForecastRegion $region = null): array
+    {
+        $quarterMonths = [
+            'Q1' => [1, 2, 3],
+            'Q2' => [4, 5, 6],
+            'Q3' => [7, 8, 9],
+            'Q4' => [10, 11, 12],
+        ];
+
+        // Fetch 18 months of data (current year + 6 months prior) for rolling window
+        $from = ($year - 1).'-07-01';
+        $to = ($year + 1).'-01-01';
+        $bindings = [$from, $to];
+        $regionFilter = $this->regionWhereClause($region, $bindings);
+
+        $monthExpr = DbDialect::monthExpr('ordered_at');
+
+        $rows = DB::select("
+            SELECT
+                {$monthExpr} as order_month,
+                SUM(net_revenue) as total_rev,
+                COUNT(*) as order_count
+            FROM shopify_orders
+            WHERE ordered_at >= ? AND ordered_at < ?
+                AND is_first_order IS NOT TRUE
+                AND financial_status NOT IN ('voided', 'refunded')
+                {$regionFilter}
+            GROUP BY order_month
+        ", $bindings);
+
+        $monthlyData = collect($rows)->keyBy('order_month');
+
+        // 12-month fallback: total repeat rev / total repeat orders
+        $totalRev = $monthlyData->sum('total_rev');
+        $totalOrders = $monthlyData->sum('order_count');
+        $fallbackAov = $totalOrders > 0 ? round($totalRev / $totalOrders, 2) : 0;
+
+        $result = [];
+        foreach ($quarterMonths as $quarter => $months) {
+            $qRev = 0;
+            $qOrders = 0;
+
+            // Rolling window: the quarter's own months + 1 month before and after
+            $windowMonths = array_unique(array_merge(
+                $months,
+                [min(12, max(1, $months[0] - 1))],
+                [min(12, max(1, end($months) + 1))],
+            ));
+
+            foreach ($windowMonths as $m) {
+                $data = $monthlyData->get($m);
+                if ($data) {
+                    $qRev += (float) $data->total_rev;
+                    $qOrders += (int) $data->order_count;
+                }
+            }
+
+            $result[$quarter] = $qOrders >= 5 ? round($qRev / $qOrders, 2) : $fallbackAov;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Calculate repeat AOV split by order number (2nd order vs 3rd+).
+     * The 2nd order is typically a different basket (kits, heaters) than subsequent
+     * orders which shift towards consumables (wax, chain wear).
+     *
+     * @return array{second_order: float, third_plus: float, overall: float}
+     */
+    public function repeatAovByOrderNumber(?ForecastRegion $region = null): array
+    {
+        $from = now()->subMonths(12)->toDateString();
+
+        // Build region filter for the subquery (uses table alias 'o')
+        $bindings = [$from];
+        $regionFilterRaw = '';
+        if ($region !== null) {
+            $countries = $region->countries();
+
+            if ($countries === []) {
+                $allMapped = collect(ForecastRegion::cases())
+                    ->filter(fn (ForecastRegion $r) => $r !== ForecastRegion::Row)
+                    ->flatMap(fn (ForecastRegion $r) => $r->countries())
+                    ->all();
+
+                $placeholders = implode(',', array_fill(0, count($allMapped), '?'));
+                $bindings = array_merge($bindings, $allMapped);
+                $regionFilterRaw = "AND (o.shipping_country_code NOT IN ({$placeholders}) OR o.shipping_country_code IS NULL)";
+            } else {
+                $placeholders = implode(',', array_fill(0, count($countries), '?'));
+                $bindings = array_merge($bindings, $countries);
+                $regionFilterRaw = "AND o.shipping_country_code IN ({$placeholders})";
+            }
+        }
+
+        $rows = DB::select("
+            SELECT
+                CASE
+                    WHEN order_sequence = 2 THEN 'second_order'
+                    ELSE 'third_plus'
+                END as order_group,
+                AVG(net_revenue) as avg_aov,
+                COUNT(*) as order_count
+            FROM (
+                SELECT
+                    o.net_revenue,
+                    ROW_NUMBER() OVER (PARTITION BY o.customer_id ORDER BY o.ordered_at) as order_sequence
+                FROM shopify_orders o
+                WHERE o.ordered_at >= ?
+                    AND o.financial_status NOT IN ('voided', 'refunded')
+                    {$regionFilterRaw}
+            ) ranked
+            WHERE order_sequence >= 2
+            GROUP BY order_group
+        ", $bindings);
+
+        $groups = collect($rows)->keyBy('order_group');
+
+        $secondAov = round((float) ($groups->get('second_order')?->avg_aov ?? 0), 2);
+        $thirdAov = round((float) ($groups->get('third_plus')?->avg_aov ?? 0), 2);
+
+        // Overall weighted average for fallback
+        $totalRev = $groups->sum(fn ($g) => (float) $g->avg_aov * (int) $g->order_count);
+        $totalOrders = $groups->sum(fn ($g) => (int) $g->order_count);
+        $overall = $totalOrders > 0 ? round($totalRev / $totalOrders, 2) : 0;
+
+        return [
+            'second_order' => $secondAov ?: $overall,
+            'third_plus' => $thirdAov ?: $overall,
+            'overall' => $overall,
+        ];
+    }
+
+    /**
      * Build a WHERE clause fragment to filter orders by forecast region.
      * Appends country codes to the bindings array.
      *

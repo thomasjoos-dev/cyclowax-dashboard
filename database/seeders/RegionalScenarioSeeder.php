@@ -253,7 +253,7 @@ class RegionalScenarioSeeder extends Seeder
 
         $this->applyCountryFilter($avgPrices, $countries, 'shopify_orders');
 
-        $prices = $avgPrices->selectRaw('products.product_category, AVG(shopify_line_items.price) as avg_price')
+        $prices = $avgPrices->selectRaw('products.product_category, SUM(shopify_line_items.price * shopify_line_items.quantity) / NULLIF(SUM(shopify_line_items.quantity), 0) as avg_price')
             ->groupBy('products.product_category')
             ->get()
             ->pluck('avg_price', 'product_category');
