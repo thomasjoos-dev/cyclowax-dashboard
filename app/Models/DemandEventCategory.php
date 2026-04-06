@@ -22,6 +22,7 @@ class DemandEventCategory extends Model
             'product_category' => ProductCategory::class,
             'expected_uplift_units' => 'integer',
             'pull_forward_pct' => 'decimal:2',
+            'is_incremental' => 'boolean',
         ];
     }
 

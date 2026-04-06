@@ -176,6 +176,89 @@ class ForecastTrackingService
     }
 
     /**
+     * Decompose forecast variance into volume, price, and mix effects.
+     * For each completed month, attributes the total variance to:
+     * - Volume effect: change in units sold at forecasted price
+     * - Price effect: change in price at actual volume
+     * - Mix effect: shift in category composition
+     *
+     * @return array<string, array{total_variance: float, volume_effect: float, price_effect: float, mix_effect: float, residual: float}>
+     */
+    public function decomposeVariance(Scenario $scenario, int $year, ?ForecastRegion $region = null): array
+    {
+        $query = ForecastSnapshot::where('scenario_id', $scenario->id)
+            ->whereNotNull('product_category')
+            ->whereNotNull('actual_revenue')
+            ->where('year_month', 'like', "{$year}-%");
+
+        if ($region !== null) {
+            $query->where('region', $region->value);
+        } else {
+            $query->whereNull('region');
+        }
+
+        $snapshots = $query->get()->groupBy('year_month');
+        $result = [];
+
+        foreach ($snapshots as $yearMonth => $monthSnapshots) {
+            $totalForecasted = $monthSnapshots->sum(fn ($s) => (float) $s->forecasted_revenue);
+            $totalActual = $monthSnapshots->sum(fn ($s) => (float) $s->actual_revenue);
+            $totalVariance = round($totalActual - $totalForecasted, 2);
+
+            $volumeEffect = 0.0;
+            $priceEffect = 0.0;
+            $mixEffect = 0.0;
+
+            foreach ($monthSnapshots as $snapshot) {
+                $fUnits = (int) $snapshot->forecasted_units;
+                $aUnits = (int) $snapshot->actual_units;
+                $fRevenue = (float) $snapshot->forecasted_revenue;
+                $aRevenue = (float) $snapshot->actual_revenue;
+
+                $fPrice = $fUnits > 0 ? $fRevenue / $fUnits : 0;
+                $aPrice = $aUnits > 0 ? $aRevenue / $aUnits : 0;
+
+                // Volume: more/fewer units at the forecasted price
+                $volumeEffect += ($aUnits - $fUnits) * $fPrice;
+
+                // Price: higher/lower price on the actual volume
+                $priceEffect += ($aPrice - $fPrice) * $aUnits;
+            }
+
+            // Mix: category share shift effect
+            $totalForecastedUnits = $monthSnapshots->sum(fn ($s) => (int) $s->forecasted_units);
+            $totalActualUnits = $monthSnapshots->sum(fn ($s) => (int) $s->actual_units);
+
+            if ($totalForecastedUnits > 0 && $totalActualUnits > 0) {
+                foreach ($monthSnapshots as $snapshot) {
+                    $fShare = (int) $snapshot->forecasted_units / $totalForecastedUnits;
+                    $aShare = (int) $snapshot->actual_units / $totalActualUnits;
+                    $fPrice = (int) $snapshot->forecasted_units > 0
+                        ? (float) $snapshot->forecasted_revenue / (int) $snapshot->forecasted_units
+                        : 0;
+                    $avgForecastedPrice = $totalForecasted / $totalForecastedUnits;
+
+                    $mixEffect += ($aShare - $fShare) * ($fPrice - $avgForecastedPrice) * $totalActualUnits;
+                }
+            }
+
+            $volumeEffect = round($volumeEffect, 2);
+            $priceEffect = round($priceEffect, 2);
+            $mixEffect = round($mixEffect, 2);
+
+            $result[$yearMonth] = [
+                'total_variance' => $totalVariance,
+                'volume_effect' => $volumeEffect,
+                'price_effect' => $priceEffect,
+                'mix_effect' => $mixEffect,
+                'residual' => round($totalVariance - $volumeEffect - $priceEffect - $mixEffect, 2),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
      * NULL-safe upsert for snapshot rows.
      * Works on both SQLite (NULL != NULL in unique) and PostgreSQL (NULL = NULL in unique v15+).
      */

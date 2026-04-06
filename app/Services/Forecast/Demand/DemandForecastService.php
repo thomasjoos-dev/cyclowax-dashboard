@@ -7,6 +7,7 @@ use App\Enums\ForecastRegion;
 use App\Enums\ProductCategory;
 use App\Exceptions\InsufficientBaselineException;
 use App\Exceptions\InvalidProductMixException;
+use App\Models\DemandEvent;
 use App\Models\Scenario;
 use App\Models\ScenarioProductMix;
 use Illuminate\Support\Collection;
@@ -37,6 +38,7 @@ class DemandForecastService
         }
 
         $baselineByMonth = $this->getBaselineByMonth($year, count($mixes) > 0, $region);
+        $this->detectBaselineAnomalies($baselineByMonth, $year, $region);
         $assumptions = $this->indexAssumptionsByQuarter($scenario, $region);
 
         $plannedEvents = $this->demandEventService->plannedForYear($year);
@@ -144,6 +146,8 @@ class DemandForecastService
 
             $forecast[$month] = $monthForecast;
         }
+
+        $this->validateEventUplift($plannedEvents, $forecast, $mixes, $region);
 
         return $forecast;
     }
@@ -373,6 +377,135 @@ class DemandForecastService
 
         // Fallback to global scenario-level adjustment
         return (float) ($scenario->retention_curve_adjustment ?? 1.0);
+    }
+
+    /**
+     * Detect anomalies in Q1 baseline data by comparing current Q1 months
+     * against the previous year's same months. Logs warnings for months
+     * that deviate more than the configured threshold (default 30%).
+     *
+     * @param  array<string, array{acq_rev: float, rep_rev: float, new_customers: int}>  $baselineByMonth
+     * @return array<int, array{month: string, metric: string, current: float, previous: float, deviation_pct: float}>
+     */
+    private function detectBaselineAnomalies(array $baselineByMonth, int $year, ?ForecastRegion $region = null): array
+    {
+        $threshold = config('forecast.baseline_anomaly_threshold', 0.30);
+        $warnings = [];
+
+        for ($m = 1; $m <= 3; $m++) {
+            $currKey = sprintf('%d-%02d', $year, $m);
+            $prevKey = sprintf('%d-%02d', $year - 1, $m);
+
+            $current = $baselineByMonth[$currKey] ?? null;
+            if ($current === null) {
+                continue;
+            }
+
+            // We need previous year data for comparison — fetch if not in baseline
+            $prevActuals = $this->forecastService->monthlyActuals(
+                sprintf('%d-%02d-01', $year - 1, $m),
+                sprintf('%d-%02d-01', $m < 12 ? $year - 1 : $year, $m < 12 ? $m + 1 : 1),
+                $region,
+            );
+            $previous = $prevActuals[0] ?? null;
+
+            if ($previous === null) {
+                continue;
+            }
+
+            foreach (['acq_rev', 'rep_rev', 'new_customers'] as $metric) {
+                $prevValue = (float) ($previous[$metric] ?? 0);
+                $currValue = (float) ($current[$metric] ?? 0);
+
+                if ($prevValue <= 0) {
+                    continue;
+                }
+
+                $deviation = abs($currValue - $prevValue) / $prevValue;
+                if ($deviation > $threshold) {
+                    $warnings[] = [
+                        'month' => $currKey,
+                        'metric' => $metric,
+                        'current' => $currValue,
+                        'previous' => $prevValue,
+                        'deviation_pct' => round($deviation * 100, 1),
+                    ];
+
+                    Log::warning('Q1 baseline anomaly detected', [
+                        'month' => $currKey,
+                        'metric' => $metric,
+                        'region' => $region?->value ?? 'global',
+                        'current' => $currValue,
+                        'previous' => $prevValue,
+                        'deviation_pct' => round($deviation * 100, 1),
+                    ]);
+                }
+            }
+        }
+
+        return $warnings;
+    }
+
+    /**
+     * Validate that event uplift values are incremental (not total volume).
+     * Logs a warning if event uplift exceeds 50% of the seasonal baseline revenue
+     * for that category/month — which suggests the uplift may include organic volume.
+     *
+     * @param  Collection<int, DemandEvent>  $events
+     * @param  array<int, array<string, array{revenue: float}>>  $forecast
+     * @param  array<string, ScenarioProductMix>  $mixes
+     */
+    private function validateEventUplift(Collection $events, array $forecast, array $mixes, ?ForecastRegion $region = null): void
+    {
+        foreach ($events as $event) {
+            foreach ($event->categories as $eventCategory) {
+                if (! $eventCategory->expected_uplift_units || $eventCategory->expected_uplift_units <= 0) {
+                    continue;
+                }
+
+                $catValue = $eventCategory->product_category->value;
+                $mix = $mixes[$catValue] ?? null;
+                if ($mix === null) {
+                    continue;
+                }
+
+                $avgPrice = (float) $mix->avg_unit_price;
+                if ($avgPrice <= 0) {
+                    continue;
+                }
+
+                $eventMonths = max(1, $event->start_date->diffInMonths($event->end_date) + 1);
+                $monthlyUpliftRevenue = ($eventCategory->expected_uplift_units / $eventMonths) * $avgPrice;
+
+                // Check against the first month of the event
+                $eventMonth = (int) $event->start_date->format('m');
+                $monthForecast = $forecast[$eventMonth][$catValue] ?? null;
+
+                if ($monthForecast === null) {
+                    continue;
+                }
+
+                // Seasonal baseline = total revenue minus event boost
+                $seasonalBaseline = $monthForecast['revenue'] - ($monthForecast['event_boost'] ?? 0);
+                if ($seasonalBaseline <= 0) {
+                    continue;
+                }
+
+                $upliftRatio = $monthlyUpliftRevenue / $seasonalBaseline;
+
+                if ($upliftRatio > 0.50) {
+                    Log::warning('Event uplift may include organic volume', [
+                        'event' => $event->name,
+                        'category' => $catValue,
+                        'region' => $region?->value ?? 'global',
+                        'monthly_uplift_revenue' => round($monthlyUpliftRevenue, 2),
+                        'seasonal_baseline' => round($seasonalBaseline, 2),
+                        'uplift_ratio_pct' => round($upliftRatio * 100, 1),
+                        'is_incremental' => $eventCategory->is_incremental,
+                    ]);
+                }
+            }
+        }
     }
 
     /**

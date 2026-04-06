@@ -377,6 +377,10 @@ it('logs warning when Q1 data is partial', function () {
         ->zeroOrMoreTimes()
         ->withArgs(fn (string $msg) => str_contains($msg, 'AOV consistency'));
 
+    Log::shouldReceive('warning')
+        ->zeroOrMoreTimes()
+        ->withArgs(fn (string $msg) => str_contains($msg, 'Q1 baseline anomaly'));
+
     $service = app(DemandForecastService::class);
     $forecast = $service->forecastYear($scenario->fresh(), 2026);
 
