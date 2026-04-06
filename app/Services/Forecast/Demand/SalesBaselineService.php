@@ -21,10 +21,10 @@ class SalesBaselineService
         $r = DB::selectOne("
             SELECT
                 ROUND(COALESCE(SUM(net_revenue), 0), 0) as total_rev,
-                ROUND(COALESCE(SUM(CASE WHEN is_first_order = 1 THEN net_revenue ELSE 0 END), 0), 0) as acq_rev,
-                ROUND(COALESCE(SUM(CASE WHEN is_first_order = 0 THEN net_revenue ELSE 0 END), 0), 0) as rep_rev,
-                COALESCE(SUM(CASE WHEN is_first_order = 1 THEN 1 ELSE 0 END), 0) as new_customers,
-                COALESCE(SUM(CASE WHEN is_first_order = 0 THEN 1 ELSE 0 END), 0) as repeat_orders
+                ROUND(COALESCE(SUM(CASE WHEN is_first_order IS TRUE THEN net_revenue ELSE 0 END), 0), 0) as acq_rev,
+                ROUND(COALESCE(SUM(CASE WHEN is_first_order IS NOT TRUE THEN net_revenue ELSE 0 END), 0), 0) as rep_rev,
+                COALESCE(SUM(CASE WHEN is_first_order IS TRUE THEN 1 ELSE 0 END), 0) as new_customers,
+                COALESCE(SUM(CASE WHEN is_first_order IS NOT TRUE THEN 1 ELSE 0 END), 0) as repeat_orders
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
                 AND financial_status NOT IN ('voided', 'refunded')
@@ -54,10 +54,10 @@ class SalesBaselineService
             SELECT
                 '.DbDialect::yearMonthExpr('ordered_at')." as month,
                 ROUND(SUM(net_revenue), 0) as total_rev,
-                ROUND(SUM(CASE WHEN is_first_order = 1 THEN net_revenue ELSE 0 END), 0) as acq_rev,
-                ROUND(SUM(CASE WHEN is_first_order = 0 THEN net_revenue ELSE 0 END), 0) as rep_rev,
-                SUM(CASE WHEN is_first_order = 1 THEN 1 ELSE 0 END) as new_customers,
-                SUM(CASE WHEN is_first_order = 0 THEN 1 ELSE 0 END) as repeat_orders
+                ROUND(SUM(CASE WHEN is_first_order IS TRUE THEN net_revenue ELSE 0 END), 0) as acq_rev,
+                ROUND(SUM(CASE WHEN is_first_order IS NOT TRUE THEN net_revenue ELSE 0 END), 0) as rep_rev,
+                SUM(CASE WHEN is_first_order IS TRUE THEN 1 ELSE 0 END) as new_customers,
+                SUM(CASE WHEN is_first_order IS NOT TRUE THEN 1 ELSE 0 END) as repeat_orders
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
                 AND financial_status NOT IN ('voided', 'refunded')

@@ -36,7 +36,7 @@ class RepeatProbabilityService
                 FROM shopify_orders so
                 INNER JOIN shopify_line_items sli ON sli.order_id = so.id
                 INNER JOIN products p ON p.id = sli.product_id
-                WHERE so.is_first_order = 1
+                WHERE so.is_first_order IS TRUE
                     AND so.ordered_at >= ?
                     AND so.financial_status NOT IN ('voided', 'refunded')
                     AND p.product_category IN ({$placeholders})

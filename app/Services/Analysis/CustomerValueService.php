@@ -199,7 +199,7 @@ class CustomerValueService
                 FROM shopify_orders so
                 JOIN shopify_line_items sli ON sli.order_id = so.id
                 JOIN products p ON p.id = sli.product_id
-                WHERE so.is_first_order = 1
+                WHERE so.is_first_order IS TRUE
                     AND p.product_category IS NOT NULL
                 GROUP BY so.customer_id, p.product_category
             )

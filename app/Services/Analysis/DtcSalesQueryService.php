@@ -21,8 +21,8 @@ class DtcSalesQueryService
                 ROUND(SUM(gross_margin), 2) as gross_margin,
                 ROUND(SUM(discounts), 2) as total_discounts,
                 ROUND(SUM(refunded), 2) as total_refunded,
-                COUNT(CASE WHEN is_first_order = 1 THEN 1 END) as first_orders,
-                COUNT(CASE WHEN is_first_order = 0 THEN 1 END) as repeat_orders
+                COUNT(CASE WHEN is_first_order IS TRUE THEN 1 END) as first_orders,
+                COUNT(CASE WHEN is_first_order IS NOT TRUE THEN 1 END) as repeat_orders
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
               AND financial_status NOT IN ('voided', 'refunded')
@@ -62,8 +62,8 @@ class DtcSalesQueryService
                 ) as margin_pct,
                 ROUND(AVG(li.price), 2) as avg_sell_price,
                 ROUND(AVG(li.cost_price), 2) as avg_cost_price,
-                SUM(CASE WHEN o.is_first_order = 1 THEN li.quantity ELSE 0 END) as units_first_order,
-                SUM(CASE WHEN o.is_first_order = 0 THEN li.quantity ELSE 0 END) as units_repeat_order
+                SUM(CASE WHEN o.is_first_order IS TRUE THEN li.quantity ELSE 0 END) as units_first_order,
+                SUM(CASE WHEN o.is_first_order IS NOT TRUE THEN li.quantity ELSE 0 END) as units_repeat_order
             FROM shopify_line_items li
             JOIN shopify_orders o ON li.order_id = o.id
             JOIN products p ON li.product_id = p.id
@@ -134,8 +134,8 @@ class DtcSalesQueryService
                     THEN ((SUM(li.price * li.quantity) - SUM(COALESCE(li.cost_price, 0) * li.quantity)) / SUM(li.price * li.quantity)) * 100
                     ELSE 0 END, 1
                 ) as margin_pct,
-                SUM(CASE WHEN o.is_first_order = 1 THEN li.quantity ELSE 0 END) as first_order_units,
-                SUM(CASE WHEN o.is_first_order = 0 THEN li.quantity ELSE 0 END) as repeat_units
+                SUM(CASE WHEN o.is_first_order IS TRUE THEN li.quantity ELSE 0 END) as first_order_units,
+                SUM(CASE WHEN o.is_first_order IS NOT TRUE THEN li.quantity ELSE 0 END) as repeat_units
             FROM shopify_line_items li
             JOIN shopify_orders o ON li.order_id = o.id
             LEFT JOIN products p ON li.product_id = p.id
@@ -352,8 +352,8 @@ class DtcSalesQueryService
                 COUNT(*) as total_orders,
                 ROUND(SUM(net_revenue), 2) as net_revenue,
                 ROUND(SUM(gross_margin), 2) as gross_margin,
-                COUNT(CASE WHEN is_first_order = 1 THEN 1 END) as first_orders,
-                COUNT(CASE WHEN is_first_order = 0 THEN 1 END) as repeat_orders
+                COUNT(CASE WHEN is_first_order IS TRUE THEN 1 END) as first_orders,
+                COUNT(CASE WHEN is_first_order IS NOT TRUE THEN 1 END) as repeat_orders
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
               AND financial_status NOT IN ('voided', 'refunded')
@@ -378,7 +378,7 @@ class DtcSalesQueryService
                 MAX(DATE(ordered_at)) as week_end,
                 COUNT(*) as orders,
                 ROUND(SUM(net_revenue), 2) as net_revenue,
-                COUNT(CASE WHEN is_first_order = 1 THEN 1 END) as first_orders
+                COUNT(CASE WHEN is_first_order IS TRUE THEN 1 END) as first_orders
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
               AND financial_status NOT IN ('voided', 'refunded')

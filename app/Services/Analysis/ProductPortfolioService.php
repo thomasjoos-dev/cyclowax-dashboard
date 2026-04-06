@@ -52,7 +52,7 @@ class ProductPortfolioService
             INNER JOIN shopify_customers sc ON sc.id = so.customer_id
             INNER JOIN products p ON p.id = sli.product_id
             WHERE {$this->orderFilter()}
-                AND so.is_first_order = 1
+                AND so.is_first_order IS TRUE
                 AND p.product_category IS NOT NULL
                 AND p.product_category NOT IN ('promotional', 'gift_card')
             GROUP BY {$groupBy}
@@ -198,7 +198,7 @@ class ProductPortfolioService
                 FROM shopify_orders so
                 INNER JOIN shopify_line_items sli ON sli.order_id = so.id
                 INNER JOIN products p ON p.id = sli.product_id
-                WHERE so.is_first_order = 1
+                WHERE so.is_first_order IS TRUE
                     AND {$this->orderFilter()}
                     AND p.product_category IS NOT NULL
                     AND p.product_category NOT IN ('promotional', 'gift_card')

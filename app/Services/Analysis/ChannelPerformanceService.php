@@ -106,7 +106,7 @@ class ChannelPerformanceService
                 COUNT(*) as first_orders
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
-                AND is_first_order = 1
+                AND is_first_order IS TRUE
                 AND financial_status NOT IN ('voided', 'refunded')
                 AND refined_channel IN ('paid_google', 'paid_instagram', 'paid_facebook')
             GROUP BY shipping_country_code
@@ -189,7 +189,7 @@ class ChannelPerformanceService
                 COUNT(*) as first_orders
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
-                AND is_first_order = 1
+                AND is_first_order IS TRUE
                 AND financial_status NOT IN ('voided', 'refunded')
                 AND refined_channel IN ('paid_google', 'paid_instagram', 'paid_facebook')
             GROUP BY month, refined_channel
@@ -285,7 +285,7 @@ class ChannelPerformanceService
                 COUNT(*) as first_orders
             FROM shopify_orders
             WHERE ordered_at >= ? AND ordered_at < ?
-                AND is_first_order = 1
+                AND is_first_order IS TRUE
                 AND financial_status NOT IN ('voided', 'refunded')
                 AND refined_channel IN ('paid_google', 'paid_instagram', 'paid_facebook')
                 {$countryWhere}
