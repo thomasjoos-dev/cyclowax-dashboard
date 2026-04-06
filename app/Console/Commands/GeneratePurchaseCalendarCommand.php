@@ -3,10 +3,11 @@
 namespace App\Console\Commands;
 
 use App\Enums\Warehouse;
+use App\Models\PurchaseCalendarRun;
 use App\Models\Scenario;
 use App\Models\SupplyProfile;
 use App\Services\Forecast\Supply\ComponentNettingService;
-use App\Services\Forecast\Supply\PurchaseCalendarService;
+use App\Services\Forecast\Supply\PurchaseCalendarTrackingService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -15,7 +16,7 @@ use Illuminate\Console\Command;
 #[Description('Generate purchase + production calendar based on demand forecast, BOM explosion and stock netting')]
 class GeneratePurchaseCalendarCommand extends Command
 {
-    public function handle(PurchaseCalendarService $calendarService, ComponentNettingService $netting): int
+    public function handle(PurchaseCalendarTrackingService $trackingService, ComponentNettingService $netting): int
     {
         $scenarioName = $this->argument('scenario');
         $year = (int) ($this->option('year') ?? now()->year);
@@ -48,17 +49,30 @@ class GeneratePurchaseCalendarCommand extends Command
         $this->info("Generating purchase + production calendar: {$scenario->label} ({$year}){$warehouseLabel}...");
         $this->newLine();
 
-        $result = $calendarService->generate($scenario, $year, $warehouse);
-        $timeline = $result['timeline'];
+        $run = $trackingService->record($scenario, $year, $warehouse);
 
-        if (empty($timeline)) {
+        if ($run->events->isEmpty()) {
             $this->warn('No events generated. Check forecast data and BOM configuration.');
 
             return self::SUCCESS;
         }
 
+        $this->renderRun($run);
+
+        // CSV export
+        if ($this->option('export')) {
+            $this->exportCsv($run);
+        }
+
+        $this->info("Persisted: {$run->events->count()} events (generated_at: {$run->generated_at->format('Y-m-d H:i')})");
+
+        return self::SUCCESS;
+    }
+
+    private function renderRun(PurchaseCalendarRun $run): void
+    {
         // Summary
-        $summary = $result['summary'];
+        $summary = $run->summary;
         $this->info("Timeline: {$summary['total_events']} events ({$summary['purchase_events']} purchases, {$summary['production_events']} production orders)");
         $this->newLine();
 
@@ -66,7 +80,7 @@ class GeneratePurchaseCalendarCommand extends Command
         $this->components->info('Component Netting Summary:');
         $nettingRows = [];
 
-        foreach ($result['netting'] as $category => $components) {
+        foreach ($run->netting_summary as $category => $components) {
             foreach ($components as $comp) {
                 if ($comp['gross_need'] <= 0) {
                     continue;
@@ -110,16 +124,16 @@ class GeneratePurchaseCalendarCommand extends Command
 
         $timelineRows = [];
 
-        foreach ($timeline as $event) {
+        foreach ($run->events as $event) {
             $timelineRows[] = [
-                $event['date'],
-                $icons[$event['event_type']] ?? $event['event_type'],
-                $event['sku'] ?: '-',
-                substr($event['name'], 0, 35),
-                number_format($event['quantity']),
-                $event['supplier'] ?? '-',
-                $event['month'] ?? '-',
-                substr($event['note'] ?? '', 0, 45),
+                $event->date->format('Y-m-d'),
+                $icons[$event->event_type] ?? $event->event_type,
+                $event->sku ?: '-',
+                substr($event->name, 0, 35),
+                number_format((float) $event->quantity),
+                $event->supplier ?? '-',
+                $event->month_label ?? '-',
+                substr($event->note ?? '', 0, 45),
             ];
         }
 
@@ -127,13 +141,6 @@ class GeneratePurchaseCalendarCommand extends Command
             ['Date', 'Type', 'SKU', 'Product', 'Qty', 'Supplier', 'Month', 'Note'],
             $timelineRows,
         );
-
-        // CSV export
-        if ($this->option('export')) {
-            $this->exportCsv($result, $scenario, $year);
-        }
-
-        return self::SUCCESS;
     }
 
     private function checkStockFreshness(ComponentNettingService $netting): void
@@ -166,35 +173,32 @@ class GeneratePurchaseCalendarCommand extends Command
         $this->newLine();
     }
 
-    /**
-     * @param  array{timeline: array, summary: array, netting: array}  $result
-     */
-    private function exportCsv(array $result, Scenario $scenario, int $year): void
+    private function exportCsv(PurchaseCalendarRun $run): void
     {
-        $filename = "Cyclowax_Purchase_Calendar_{$scenario->name}_{$year}.csv";
+        $scenario = $run->scenario;
+        $filename = "Cyclowax_Purchase_Calendar_{$scenario->name}_{$run->year}.csv";
         $path = ($_SERVER['HOME'] ?? '/tmp').'/'.'Desktop/'.$filename;
 
         $fp = fopen($path, 'w');
         fwrite($fp, "\xEF\xBB\xBF"); // UTF-8 BOM
 
-        // Timeline sheet
         $headers = ['Date', 'Event Type', 'SKU', 'Product', 'Quantity', 'Gross Qty', 'Net Qty', 'Supplier', 'Category', 'Month', 'Scenario', 'Note'];
         fwrite($fp, implode(';', $headers)."\n");
 
-        foreach ($result['timeline'] as $event) {
+        foreach ($run->events as $event) {
             $row = [
-                $event['date'],
-                $event['event_type'],
-                $event['sku'] ?? '',
-                '"'.str_replace('"', '""', $event['name'] ?? '').'"',
-                $event['quantity'],
-                $event['gross_quantity'] ?? '',
-                $event['net_quantity'] ?? '',
-                '"'.str_replace('"', '""', $event['supplier'] ?? '').'"',
-                $event['category'] ?? '',
-                $event['month'] ?? '',
-                $event['scenario'] ?? '',
-                '"'.str_replace('"', '""', $event['note'] ?? '').'"',
+                $event->date->format('Y-m-d'),
+                $event->event_type,
+                $event->sku ?? '',
+                '"'.str_replace('"', '""', $event->name ?? '').'"',
+                $event->quantity,
+                $event->gross_quantity ?? '',
+                $event->net_quantity ?? '',
+                '"'.str_replace('"', '""', $event->supplier ?? '').'"',
+                $event->product_category->value ?? '',
+                $event->month_label ?? '',
+                $scenario->name,
+                '"'.str_replace('"', '""', $event->note ?? '').'"',
             ];
             fwrite($fp, implode(';', $row)."\n");
         }

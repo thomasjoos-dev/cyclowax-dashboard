@@ -180,6 +180,10 @@ Demand Forecast System
 
   Purchase & Production Calendar
   └── GeneratePurchaseCalendarCommand (forecast:purchase-calendar {scenario} [--warehouse=be|us])
+        └── PurchaseCalendarTrackingService (persist + upsert)
+              ├── PurchaseCalendarRun: scenario × year × warehouse, JSON summary/netting/sku_mix
+              ├── PurchaseCalendarEvent: genormaliseerde timeline events (purchase/receipt/production)
+              └── Upsert run, delete+insert events bij regeneratie
         └── PurchaseCalendarService (orchestrator)
               ├── Optioneel per Warehouse — aggregeert demand van warehouse-regio's
               ├── Event earmarks: DemandEventService.skuEarmarksForYear()

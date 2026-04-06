@@ -14,6 +14,7 @@ use App\Services\Forecast\Supply\ComponentNettingService;
 use App\Services\Forecast\Supply\InventoryHealthService;
 use App\Services\Forecast\Supply\ProductionTimelineService;
 use App\Services\Forecast\Supply\PurchaseCalendarService;
+use App\Services\Forecast\Supply\PurchaseCalendarTrackingService;
 use App\Services\Forecast\Supply\SupplyProfileAnalyzer;
 use App\Services\Forecast\Tracking\ForecastTrackingService;
 use App\Services\Forecast\Tracking\GoalService;
@@ -38,6 +39,7 @@ $forecastServices = [
     ScenarioService::class,
     GoalService::class,
     SkuMixService::class,
+    PurchaseCalendarTrackingService::class,
 ];
 
 it('resolves all forecast services from the container', function () use ($forecastServices) {
@@ -48,6 +50,6 @@ it('resolves all forecast services from the container', function () use ($foreca
     }
 });
 
-it('has exactly 18 forecast services registered', function () use ($forecastServices) {
-    expect($forecastServices)->toHaveCount(18);
+it('has exactly 19 forecast services registered', function () use ($forecastServices) {
+    expect($forecastServices)->toHaveCount(19);
 });
