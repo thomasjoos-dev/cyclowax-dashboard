@@ -182,11 +182,18 @@ Demand Forecast System
   └── GeneratePurchaseCalendarCommand (forecast:purchase-calendar {scenario} [--warehouse=be|us])
         └── PurchaseCalendarService (orchestrator)
               ├── Optioneel per Warehouse — aggregeert demand van warehouse-regio's
+              ├── Event earmarks: DemandEventService.skuEarmarksForYear()
+              │     └── Extraheert product-specifieke uplifts uit demand events (product_id op demand_event_categories)
               ├── Phase 1: demand forecast → SKU mix → BOM explosion per categorie
+              │     └── SkuMixService.distribute() met scenario overrides + event earmarks
+              │           ├── Scenario overrides: scenario_product_mixes met product_id + sku_share
+              │           ├── Event earmarks: geoormerkte units voor specifieke producten
+              │           └── Fallback: historische 12-maanden salesmix
               ├── Phase 2: aggregeer component demand over alle categorieën → 1× netten
               │     └── ComponentNettingService.net() — stock + open PO aftrek
               ├── Phase 3: split netting pro-rata terug per categorie (voor rapportage)
               ├── Phase 4: monthly timelines per categorie (12 needDates, einde elke maand)
+              │     └── Per maand: SkuMixService.distribute() met maand-earmarks
               │     └── ProductionTimelineService.timeline() — backwards scheduling
               │           ├── BOM explosion → leaf components + intermediates
               │           ├── Purchase + receipt events (lead time gebaseerd)
@@ -286,7 +293,7 @@ app/Services/
 │   ├── Supply/    ComponentNettingService, ProductionTimelineService, BomExplosionService,
 │   │              PurchaseCalendarService, InventoryHealthService, SupplyProfileAnalyzer
 │   ├── Tracking/  ForecastTrackingService, ScenarioService, GoalService
-│   └── SkuMixService (cross-cutting)
+│   └── SkuMixService (cross-cutting, scenario overrides + event earmarks)
 ├── Scoring/       RfmScoringService, FollowerScorer, ChannelClassificationService,
 │                  ProductClassifier, SuspectProfileFlagger, SegmentTransitionLogger,
 │                  OrderMarginCalculator

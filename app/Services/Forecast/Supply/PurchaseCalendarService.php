@@ -6,6 +6,7 @@ use App\Enums\ProductCategory;
 use App\Enums\Warehouse;
 use App\Models\Scenario;
 use App\Models\SupplyProfile;
+use App\Services\Forecast\Demand\DemandEventService;
 use App\Services\Forecast\Demand\DemandForecastService;
 use App\Services\Forecast\SkuMixService;
 
@@ -17,6 +18,7 @@ class PurchaseCalendarService
         private BomExplosionService $bomExplosion,
         private ProductionTimelineService $productionTimeline,
         private ComponentNettingService $netting,
+        private DemandEventService $demandEvents,
     ) {}
 
     /**
@@ -31,6 +33,7 @@ class PurchaseCalendarService
     {
         $forecast = $this->buildForecast($scenario, $year, $warehouse);
         $supplyProfiles = SupplyProfile::all()->keyBy(fn ($p) => $p->product_category->value);
+        $eventEarmarks = $this->demandEvents->skuEarmarksForYear($year);
 
         $allTimelines = [];
         $allSkuMixes = [];
@@ -39,6 +42,7 @@ class PurchaseCalendarService
         $categorySkuDistributions = []; // category => [product_id => qty]
         $categoryMonthlyUnits = []; // category => [month => units]
         $categoryYearlyUnits = []; // category => yearly total
+        $categoryMonthlyEarmarks = []; // category => [month => [product_id => units]]
 
         $forecastableCategories = collect(ProductCategory::cases())
             ->filter(fn (ProductCategory $cat) => $cat->forecastGroup() !== null);
@@ -59,7 +63,24 @@ class PurchaseCalendarService
                 continue;
             }
 
-            $skuDistribution = $this->skuMix->distribute($category, $yearlyUnits);
+            // Collect monthly earmarks for this category and aggregate yearly
+            $monthEarmarks = [];
+            $yearlyEarmarks = [];
+            for ($month = 1; $month <= 12; $month++) {
+                $me = $eventEarmarks[$month][$category->value] ?? [];
+                $monthEarmarks[$month] = $me;
+                foreach ($me as $productId => $units) {
+                    $yearlyEarmarks[$productId] = ($yearlyEarmarks[$productId] ?? 0) + $units;
+                }
+            }
+            $categoryMonthlyEarmarks[$category->value] = $monthEarmarks;
+
+            $skuDistribution = $this->skuMix->distribute(
+                $category,
+                $yearlyUnits,
+                scenario: $scenario,
+                earmarkedUnits: $yearlyEarmarks,
+            );
 
             if (empty($skuDistribution)) {
                 continue;
@@ -111,16 +132,14 @@ class PurchaseCalendarService
                 // Need date = last day of the month
                 $needDate = date('Y-m-t', strtotime("{$year}-".str_pad($month, 2, '0', STR_PAD_LEFT).'-01'));
 
-                // Distribute monthly demand across SKUs proportionally
-                $monthSkuQty = [];
-                foreach ($skuDistribution as $productId => $yearQty) {
-                    $ratio = $yearQty / $yearlyUnits;
-                    $mQty = (int) ceil($units * $ratio);
-
-                    if ($mQty > 0) {
-                        $monthSkuQty[$productId] = $mQty;
-                    }
-                }
+                // Distribute monthly demand across SKUs with earmark awareness
+                $monthEarmarks = $categoryMonthlyEarmarks[$categoryValue][$month] ?? [];
+                $monthSkuQty = $this->skuMix->distribute(
+                    $category,
+                    $units,
+                    scenario: $scenario,
+                    earmarkedUnits: $monthEarmarks,
+                );
 
                 $monthTimeline = $this->productionTimeline->timeline($monthSkuQty, $needDate);
 

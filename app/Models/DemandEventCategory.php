@@ -23,6 +23,7 @@ class DemandEventCategory extends Model
             'expected_uplift_units' => 'integer',
             'pull_forward_pct' => 'decimal:2',
             'is_incremental' => 'boolean',
+            'product_id' => 'integer',
         ];
     }
 
@@ -32,5 +33,21 @@ class DemandEventCategory extends Model
     public function demandEvent(): BelongsTo
     {
         return $this->belongsTo(DemandEvent::class);
+    }
+
+    /**
+     * @return BelongsTo<Product, $this>
+     */
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
+    }
+
+    /**
+     * Whether this category effect targets a specific product (SKU-level).
+     */
+    public function isProductTargeted(): bool
+    {
+        return $this->product_id !== null;
     }
 }

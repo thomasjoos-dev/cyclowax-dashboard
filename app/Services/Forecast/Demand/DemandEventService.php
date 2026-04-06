@@ -61,6 +61,56 @@ class DemandEventService
     }
 
     /**
+     * Extract product-targeted earmarks from planned events for a given year.
+     *
+     * Returns earmarked units grouped by month, category, and product_id.
+     * Only includes event categories where a specific product_id is set.
+     *
+     * @return array<int, array<string, array<int, int>>> [month => [category_value => [product_id => units]]]
+     */
+    public function skuEarmarksForYear(int $year): array
+    {
+        $events = $this->plannedForYear($year);
+        $earmarks = [];
+
+        foreach ($events as $event) {
+            foreach ($event->categories as $eventCategory) {
+                if (! $eventCategory->isProductTargeted()) {
+                    continue;
+                }
+
+                if (! $eventCategory->expected_uplift_units || $eventCategory->expected_uplift_units <= 0) {
+                    continue;
+                }
+
+                $eventMonths = max(1, (int) ceil($event->start_date->diffInMonths($event->end_date)));
+                $monthlyUnits = (int) ceil($eventCategory->expected_uplift_units / $eventMonths);
+
+                $catValue = $eventCategory->product_category->value;
+                $productId = $eventCategory->product_id;
+
+                // Distribute across each month the event spans
+                $cursor = $event->start_date->toMutable()->startOfMonth();
+                $end = $event->end_date->toMutable()->endOfMonth();
+
+                while ($cursor->lte($end)) {
+                    $month = (int) $cursor->format('m');
+                    $monthYear = (int) $cursor->format('Y');
+
+                    if ($monthYear === $year) {
+                        $earmarks[$month][$catValue][$productId] =
+                            ($earmarks[$month][$catValue][$productId] ?? 0) + $monthlyUnits;
+                    }
+
+                    $cursor->addMonth();
+                }
+            }
+        }
+
+        return $earmarks;
+    }
+
+    /**
      * Create a demand event with its category effects in one call.
      *
      * @param  array{name: string, type: string, start_date: string, end_date: string, description?: string, is_historical?: bool}  $eventData
