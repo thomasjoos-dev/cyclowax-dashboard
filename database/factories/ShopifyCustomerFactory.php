@@ -25,6 +25,12 @@ class ShopifyCustomerFactory extends Factory
             'first_order_at' => fake()->dateTimeBetween('-2 years', '-6 months'),
             'last_order_at' => fake()->dateTimeBetween('-6 months', 'now'),
             'country_code' => fake()->randomElement(['NL', 'BE', 'DE', 'FR', 'US', 'GB']),
+            'first_name' => fake()->firstName(),
+            'last_name' => fake()->lastName(),
+            'locale' => fake()->randomElement(['nl', 'en', 'de', 'fr']),
+            'tags' => null,
+            'email_marketing_consent' => fake()->randomElement(['SUBSCRIBED', 'NOT_SUBSCRIBED', null]),
+            'shopify_created_at' => fake()->dateTimeBetween('-3 years', '-2 years'),
         ];
     }
 }

@@ -124,10 +124,16 @@ class ShopifyOrderSyncer
                                 }
                                 customer {
                                     id
+                                    firstName
+                                    lastName
                                     email
                                     numberOfOrders
                                     amountSpent { amount }
                                     defaultAddress { countryCodeV2 }
+                                    locale
+                                    tags
+                                    emailMarketingConsent { marketingState }
+                                    createdAt
                                 }
                                 lineItems(first: 100) {
                                     edges {
@@ -204,10 +210,16 @@ class ShopifyOrderSyncer
                             }
                             customer {
                                 id
+                                firstName
+                                lastName
                                 email
                                 numberOfOrders
                                 amountSpent { amount }
                                 defaultAddress { countryCodeV2 }
+                                locale
+                                tags
+                                emailMarketingConsent { marketingState }
+                                createdAt
                             }
                             lineItems {
                                 edges {
@@ -457,10 +469,16 @@ class ShopifyOrderSyncer
         return ShopifyCustomer::query()->updateOrCreate(
             ['shopify_id' => $shopifyId],
             [
+                'first_name' => $data['firstName'] ?? null,
+                'last_name' => $data['lastName'] ?? null,
                 'email' => $data['email'] ?? null,
                 'orders_count' => $data['numberOfOrders'] ?? 0,
                 'total_spent' => $data['amountSpent']['amount'] ?? 0,
                 'country_code' => $data['defaultAddress']['countryCodeV2'] ?? null,
+                'locale' => $data['locale'] ?? null,
+                'tags' => ! empty($data['tags']) ? (is_array($data['tags']) ? implode(',', $data['tags']) : $data['tags']) : null,
+                'email_marketing_consent' => $data['emailMarketingConsent']['marketingState'] ?? null,
+                'shopify_created_at' => $data['createdAt'] ?? null,
             ]
         );
     }

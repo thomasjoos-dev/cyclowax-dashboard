@@ -58,6 +58,8 @@ class ShopifyCustomer extends Model
             'rfm_segment' => CustomerSegment::class,
             'previous_rfm_segment' => CustomerSegment::class,
             'rfm_scored_at' => 'datetime',
+            'shopify_created_at' => 'datetime',
+            'gender_probability' => 'float',
         ];
     }
 }
