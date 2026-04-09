@@ -2,14 +2,26 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SegmentTransition extends Model
 {
+    use HasFactory;
+
     public $timestamps = false;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'rider_profile_id',
+        'type',
+        'from_lifecycle',
+        'to_lifecycle',
+        'from_segment',
+        'to_segment',
+        'occurred_at',
+    ];
 
     /**
      * @return BelongsTo<RiderProfile, $this>

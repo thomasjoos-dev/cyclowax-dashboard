@@ -13,7 +13,17 @@ class ScenarioProductMix extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'scenario_id',
+        'product_category',
+        'region',
+        'product_id',
+        'sku_share',
+        'acq_share',
+        'repeat_share',
+        'avg_unit_price',
+    ];
 
     /**
      * @return array<string, string>

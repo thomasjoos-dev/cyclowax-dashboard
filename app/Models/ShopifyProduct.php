@@ -13,7 +13,13 @@ class ShopifyProduct extends Model
     /** @use HasFactory<ShopifyProductFactory> */
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'shopify_id',
+        'title',
+        'product_type',
+        'status',
+    ];
 
     /**
      * @return HasOne<Product, $this>

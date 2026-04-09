@@ -9,7 +9,20 @@ class AdSpend extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'date',
+        'platform',
+        'campaign_name',
+        'campaign_id',
+        'country_code',
+        'channel_type',
+        'spend',
+        'impressions',
+        'clicks',
+        'conversions',
+        'conversions_value',
+    ];
 
     protected function casts(): array
     {

@@ -11,7 +11,32 @@ class KlaviyoCampaign extends Model
     /** @use HasFactory<KlaviyoCampaignFactory> */
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'klaviyo_id',
+        'name',
+        'channel',
+        'status',
+        'archived',
+        'send_strategy',
+        'is_tracking_opens',
+        'is_tracking_clicks',
+        'recipients',
+        'delivered',
+        'bounced',
+        'opens',
+        'opens_unique',
+        'clicks',
+        'clicks_unique',
+        'unsubscribes',
+        'conversions',
+        'conversion_value',
+        'revenue_per_recipient',
+        'scheduled_at',
+        'send_time',
+        'klaviyo_created_at',
+        'klaviyo_updated_at',
+    ];
 
     /**
      * @return array<string, string>

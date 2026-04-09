@@ -11,7 +11,15 @@ class Scenario extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'name',
+        'label',
+        'year',
+        'description',
+        'is_active',
+        'retention_curve_adjustment',
+    ];
 
     /**
      * @return array<string, string>

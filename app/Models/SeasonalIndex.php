@@ -12,7 +12,15 @@ class SeasonalIndex extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'month',
+        'index_value',
+        'region',
+        'source',
+        'product_category',
+        'forecast_group',
+    ];
 
     /**
      * @return array<string, string>

@@ -11,7 +11,22 @@ class OpenPurchaseOrder extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'odoo_po_line_id',
+        'po_reference',
+        'product_id',
+        'odoo_product_id',
+        'product_name',
+        'quantity_ordered',
+        'quantity_received',
+        'quantity_open',
+        'unit_price',
+        'date_order',
+        'date_planned',
+        'supplier_name',
+        'state',
+    ];
 
     /**
      * @return array<string, string>

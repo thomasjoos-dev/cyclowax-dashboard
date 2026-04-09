@@ -11,7 +11,15 @@ class DemandEventCategory extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'demand_event_id',
+        'product_category',
+        'expected_uplift_units',
+        'pull_forward_pct',
+        'is_incremental',
+        'product_id',
+    ];
 
     /**
      * @return array<string, string>

@@ -12,7 +12,16 @@ class ProductBom extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'odoo_bom_id',
+        'product_id',
+        'bom_type',
+        'product_qty',
+        'assembly_lead_time_days',
+        'assembly_time_source',
+        'assembly_time_samples',
+    ];
 
     /**
      * @return array<string, string>

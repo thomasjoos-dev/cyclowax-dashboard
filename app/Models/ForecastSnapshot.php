@@ -5,14 +5,27 @@ namespace App\Models;
 use App\Enums\ForecastRegion;
 use App\Enums\ProductCategory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ForecastSnapshot extends Model
 {
+    use HasFactory;
+
     public $timestamps = false;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'scenario_id',
+        'year_month',
+        'product_category',
+        'region',
+        'forecasted_units',
+        'forecasted_revenue',
+        'actual_units',
+        'actual_revenue',
+    ];
 
     /**
      * @return array<string, string>

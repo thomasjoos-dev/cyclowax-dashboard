@@ -10,7 +10,14 @@ class ProductStockSnapshot extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'product_id',
+        'qty_on_hand',
+        'qty_forecasted',
+        'qty_free',
+        'recorded_at',
+    ];
 
     /**
      * @return array<string, string>

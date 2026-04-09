@@ -12,7 +12,15 @@ class DemandEvent extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'name',
+        'type',
+        'start_date',
+        'end_date',
+        'description',
+        'is_historical',
+    ];
 
     /**
      * @return array<string, string>

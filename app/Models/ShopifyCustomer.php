@@ -15,7 +15,34 @@ class ShopifyCustomer extends Model
     /** @use HasFactory<ShopifyCustomerFactory> */
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'shopify_id',
+        'email',
+        'first_name',
+        'last_name',
+        'locale',
+        'tags',
+        'country_code',
+        'email_marketing_consent',
+        'orders_count',
+        'local_orders_count',
+        'total_spent',
+        'total_cost',
+        'first_order_at',
+        'last_order_at',
+        'first_order_channel',
+        'shopify_created_at',
+        'gender',
+        'gender_probability',
+        'r_score',
+        'f_score',
+        'm_score',
+        'rfm_segment',
+        'previous_rfm_segment',
+        'rfm_scored_at',
+        'segment_synced_at',
+    ];
 
     /**
      * @return HasMany<ShopifyOrder, $this>

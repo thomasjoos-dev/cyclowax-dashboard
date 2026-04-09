@@ -17,7 +17,21 @@ class RiderProfile extends Model
     /** @use HasFactory<RiderProfileFactory> */
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'email',
+        'lifecycle_stage',
+        'shopify_customer_id',
+        'klaviyo_profile_id',
+        'segment',
+        'previous_segment',
+        'engagement_score',
+        'intent_score',
+        'linked_at',
+        'segment_changed_at',
+        'klaviyo_synced_at',
+        'shopify_synced_at',
+    ];
 
     /**
      * @return BelongsTo<ShopifyCustomer, $this>

@@ -2,6 +2,7 @@
 
 use App\Enums\ForecastRegion;
 use App\Enums\ProductCategory;
+use App\Models\Product;
 use App\Models\Scenario;
 use App\Models\ScenarioProductMix;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -46,13 +47,15 @@ it('loads product mixes from scenario', function () {
     expect($scenario->productMixes)->toHaveCount(2);
 });
 
-it('enforces unique constraint on scenario, category and region', function () {
+it('enforces unique constraint on scenario, category, region and product', function () {
     $scenario = Scenario::factory()->create();
+    $product = Product::factory()->create(['product_category' => ProductCategory::Chain->value]);
 
     ScenarioProductMix::create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::Chain->value,
         'region' => ForecastRegion::De->value,
+        'product_id' => $product->id,
         'acq_share' => 0.10,
         'repeat_share' => 0.30,
         'avg_unit_price' => 85.00,
@@ -62,6 +65,7 @@ it('enforces unique constraint on scenario, category and region', function () {
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::Chain->value,
         'region' => ForecastRegion::De->value,
+        'product_id' => $product->id,
         'acq_share' => 0.20,
         'repeat_share' => 0.40,
         'avg_unit_price' => 90.00,

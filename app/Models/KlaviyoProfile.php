@@ -12,7 +12,44 @@ class KlaviyoProfile extends Model
     /** @use HasFactory<KlaviyoProfileFactory> */
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'klaviyo_id',
+        'email',
+        'phone_number',
+        'external_id',
+        'first_name',
+        'last_name',
+        'organization',
+        'city',
+        'region',
+        'country',
+        'zip',
+        'timezone',
+        'properties',
+        'historic_clv',
+        'predicted_clv',
+        'total_clv',
+        'historic_number_of_orders',
+        'predicted_number_of_orders',
+        'average_order_value',
+        'churn_probability',
+        'average_days_between_orders',
+        'expected_date_of_next_order',
+        'last_event_date',
+        'klaviyo_created_at',
+        'klaviyo_updated_at',
+        'emails_received',
+        'emails_opened',
+        'emails_clicked',
+        'engagement_synced_at',
+        'site_visits',
+        'product_views',
+        'cart_adds',
+        'checkouts_started',
+        'is_suspect',
+        'suspect_reason',
+    ];
 
     /**
      * @return HasOne<RiderProfile, $this>

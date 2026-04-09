@@ -10,7 +10,18 @@ class SupplyProfile extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'product_category',
+        'procurement_lead_time_days',
+        'assembly_lead_time_days',
+        'moq',
+        'buffer_days',
+        'supplier_name',
+        'notes',
+        'validated_at',
+        'validated_by',
+    ];
 
     /**
      * @return array<string, string>

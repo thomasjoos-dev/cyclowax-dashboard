@@ -13,7 +13,14 @@ class Objective extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'parent_key_result_id',
+        'team',
+        'title',
+        'year',
+        'sort_order',
+    ];
 
     /**
      * @return array<string, string>

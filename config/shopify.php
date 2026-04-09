@@ -49,4 +49,16 @@ return [
 
     'client_secret' => env('SHOPIFY_CLIENT_SECRET'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Rate Limiting
+    |--------------------------------------------------------------------------
+    |
+    | Proactive throttle threshold: when available API points drop below
+    | this fraction of max, the client sleeps until points restore.
+    |
+    */
+
+    'throttle_threshold' => (float) env('SHOPIFY_THROTTLE_THRESHOLD', 0.2),
+
 ];

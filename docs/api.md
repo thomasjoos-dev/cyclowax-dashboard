@@ -143,12 +143,31 @@ Two authentication methods are supported:
 1. **Session cookie** — automatic for the Inertia SPA (browser sends session cookie)
 2. **API token** — for external clients (n8n, scripts, future apps). Send `Authorization: Bearer <token>` header.
 
+**Token configuration:**
+- Tokens expire after **8 hours** (`config/sanctum.php` → `expiration: 480`)
+- Token prefix: `cwx_` (enables GitHub secret scanning detection)
+- Expiration is configurable via `SANCTUM_TOKEN_EXPIRATION` env var
+
 **Creating tokens** (via tinker or future admin panel):
 ```php
 $user->createToken('integration-name', ['orders:read', 'products:read']);
 ```
 
 Unauthenticated requests receive `401 Unauthorized`.
+
+### Rate Limiting
+
+All API v1 endpoints are rate limited via `throttle:api` middleware:
+- **60 requests per minute** per authenticated user (or per IP for unauthenticated requests)
+- Exceeded limits return `429 Too Many Requests` with `Retry-After` header
+- Configured in `AppServiceProvider::configureRateLimiting()`
+
+### CORS
+
+Cross-origin requests are configured in `config/cors.php`:
+- Allowed origins: configured via `CORS_ALLOWED_ORIGINS` env var (default: `https://cyclowax-dashboard.test`)
+- Credentials supported (cookies/auth headers)
+- Applies to `api/*` and `sanctum/csrf-cookie` paths
 
 ### Input Validation
 
@@ -209,6 +228,36 @@ Paginated product list.
 
 ### `GET /api/v1/products/{id}`
 Single product.
+
+### `GET /api/v1/sync/status`
+Overview of all sync pipeline steps with current status and data age.
+
+**Response fields per step:** `step`, `status`, `last_synced_at`, `age` (human readable), `duration_seconds`, `records_synced`, `was_full_sync`.
+
+### `GET /api/v1/analytics/revenue?period=mtd|qtd|ytd`
+Revenue analytics: KPI metrics, revenue split (acq/repeat), AOV trend.
+
+### `GET /api/v1/analytics/acquisition`
+Acquisition analytics: trend, by region, region growth rates.
+
+### `GET /api/v1/analytics/retention`
+Retention analytics: order type split, cohort retention, time to second order, retention by region.
+
+### `GET /api/v1/analytics/products`
+Product analytics: top products first order, top products returning.
+
+### `GET /api/v1/scenarios`
+List all active forecast scenarios with basic info (id, name, label, year, description).
+
+### `GET /api/v1/scenarios/{scenario}`
+Single scenario with loaded assumptions and product mixes.
+
+### `GET /api/v1/scenarios/{scenario}/forecast?year=2026`
+Demand forecast for a scenario. Returns total aggregates per month + year total, and category breakdown.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `year` | int | Forecast year (default: scenario year) |
 
 ---
 

@@ -93,7 +93,8 @@ test('orders per_page is capped at 100', function () {
     $this->actingAs($user)
         ->getJson('/api/v1/orders?per_page=500')
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('per_page');
+        ->assertJsonPath('error.code', 'validation')
+        ->assertJsonPath('error.fields.per_page.0', fn (string $v) => str_contains($v, 'per page'));
 });
 
 test('customers per_page is capped at 100', function () {
@@ -102,7 +103,8 @@ test('customers per_page is capped at 100', function () {
     $this->actingAs($user)
         ->getJson('/api/v1/customers?per_page=500')
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('per_page');
+        ->assertJsonPath('error.code', 'validation')
+        ->assertJsonPath('error.fields.per_page.0', fn (string $v) => str_contains($v, 'per page'));
 });
 
 test('products per_page is capped at 100', function () {
@@ -111,7 +113,8 @@ test('products per_page is capped at 100', function () {
     $this->actingAs($user)
         ->getJson('/api/v1/products?per_page=500')
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('per_page');
+        ->assertJsonPath('error.code', 'validation')
+        ->assertJsonPath('error.fields.per_page.0', fn (string $v) => str_contains($v, 'per page'));
 });
 
 /*
@@ -126,7 +129,8 @@ test('orders rejects invalid financial_status', function () {
     $this->actingAs($user)
         ->getJson('/api/v1/orders?financial_status=HACKED')
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('financial_status');
+        ->assertJsonPath('error.code', 'validation')
+        ->assertJsonPath('error.fields.financial_status.0', fn (string $v) => str_contains($v, 'financial status'));
 });
 
 test('products rejects invalid status', function () {
@@ -135,7 +139,8 @@ test('products rejects invalid status', function () {
     $this->actingAs($user)
         ->getJson('/api/v1/products?status=invalid')
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('status');
+        ->assertJsonPath('error.code', 'validation')
+        ->assertJsonPath('error.fields.status.0', fn (string $v) => ! empty($v));
 });
 
 test('dashboard rejects invalid period', function () {
@@ -144,7 +149,8 @@ test('dashboard rejects invalid period', function () {
     $this->actingAs($user)
         ->getJson('/api/v1/dashboard?period=invalid')
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('period');
+        ->assertJsonPath('error.code', 'validation')
+        ->assertJsonPath('error.fields.period.0', fn (string $v) => ! empty($v));
 });
 
 /*
@@ -159,7 +165,8 @@ test('orders rejects invalid date format', function () {
     $this->actingAs($user)
         ->getJson('/api/v1/orders?from=not-a-date')
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('from');
+        ->assertJsonPath('error.code', 'validation')
+        ->assertJsonPath('error.fields.from.0', fn (string $v) => ! empty($v));
 });
 
 test('orders rejects to before from', function () {
@@ -168,7 +175,8 @@ test('orders rejects to before from', function () {
     $this->actingAs($user)
         ->getJson('/api/v1/orders?from=2026-03-31&to=2026-01-01')
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('to');
+        ->assertJsonPath('error.code', 'validation')
+        ->assertJsonPath('error.fields.to.0', fn (string $v) => ! empty($v));
 });
 
 /*

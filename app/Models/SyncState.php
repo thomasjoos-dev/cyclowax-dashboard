@@ -3,11 +3,24 @@
 namespace App\Models;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncState extends Model
 {
-    protected $guarded = [];
+    use HasFactory;
+
+    /** @var list<string> */
+    protected $fillable = [
+        'step',
+        'last_synced_at',
+        'duration_seconds',
+        'records_synced',
+        'was_full_sync',
+        'status',
+        'cursor',
+        'started_at',
+    ];
 
     /**
      * @return array<string, string>

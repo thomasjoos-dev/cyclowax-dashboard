@@ -11,7 +11,18 @@ class KeyResult extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'objective_id',
+        'title',
+        'metric_key',
+        'target_value',
+        'current_value',
+        'unit',
+        'tracking_mode',
+        'quarter',
+        'sort_order',
+    ];
 
     /**
      * @return array<string, string>

@@ -10,7 +10,12 @@ class ProductBomLine extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'bom_id',
+        'component_product_id',
+        'quantity',
+    ];
 
     /**
      * @return array<string, string>

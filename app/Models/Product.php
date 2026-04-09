@@ -18,7 +18,29 @@ class Product extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'sku',
+        'name',
+        'product_type',
+        'category',
+        'shopify_product_id',
+        'odoo_product_id',
+        'cost_price',
+        'list_price',
+        'weight',
+        'barcode',
+        'is_active',
+        'last_synced_at',
+        'product_category',
+        'portfolio_role',
+        'journey_phase',
+        'wax_recipe',
+        'heater_generation',
+        'is_discontinued',
+        'discontinued_at',
+        'successor_product_id',
+    ];
 
     /**
      * @param  Builder<self>  $query

@@ -4,13 +4,25 @@ namespace App\Models;
 
 use App\Enums\Warehouse;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PurchaseCalendarRun extends Model
 {
-    protected $guarded = [];
+    use HasFactory;
+
+    /** @var list<string> */
+    protected $fillable = [
+        'scenario_id',
+        'year',
+        'warehouse',
+        'generated_at',
+        'summary',
+        'netting_summary',
+        'sku_mix_summary',
+    ];
 
     /**
      * @return array<string, string>

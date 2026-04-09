@@ -4,14 +4,32 @@ namespace App\Models;
 
 use App\Enums\ProductCategory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PurchaseCalendarEvent extends Model
 {
+    use HasFactory;
+
     public $timestamps = false;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'run_id',
+        'date',
+        'event_type',
+        'product_id',
+        'sku',
+        'name',
+        'quantity',
+        'gross_quantity',
+        'net_quantity',
+        'supplier',
+        'product_category',
+        'month_label',
+        'note',
+    ];
 
     /**
      * @return array<string, string>

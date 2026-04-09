@@ -12,7 +12,17 @@ class ShopifyLineItem extends Model
     /** @use HasFactory<ShopifyLineItemFactory> */
     use HasFactory;
 
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = [
+        'order_id',
+        'product_title',
+        'product_type',
+        'sku',
+        'quantity',
+        'price',
+        'product_id',
+        'cost_price',
+    ];
 
     /**
      * @return BelongsTo<ShopifyOrder, $this>
