@@ -10,6 +10,7 @@ use App\Services\Forecast\Tracking\ForecastTrackingService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 #[Signature('forecast:generate {scenario : Scenario name (e.g. base, conservative, ambitious)} {--year= : Forecast year (defaults to current)} {--region= : Generate for a specific region (e.g. de, eu_alpine)} {--all-regions : Generate for all regions with summary}')]
 #[Description('Generate a demand forecast per category per month and save as snapshot')]
@@ -20,36 +21,43 @@ class GenerateDemandForecastCommand extends Command
         ForecastTrackingService $trackingService,
         RegionalForecastAggregator $aggregator,
     ): int {
-        $year = (int) ($this->option('year') ?? date('Y'));
-        $scenarioName = $this->argument('scenario');
+        try {
+            $year = (int) ($this->option('year') ?? date('Y'));
+            $scenarioName = $this->argument('scenario');
 
-        $scenario = Scenario::where('name', $scenarioName)->forYear($year)->first();
+            $scenario = Scenario::where('name', $scenarioName)->forYear($year)->first();
 
-        if (! $scenario) {
-            $this->error("Scenario '{$scenarioName}' not found for year {$year}.");
-
-            return self::FAILURE;
-        }
-
-        // Resolve region
-        $regionValue = $this->option('region');
-        $allRegions = $this->option('all-regions');
-        $region = null;
-
-        if ($regionValue) {
-            $region = ForecastRegion::tryFrom($regionValue);
-            if (! $region) {
-                $this->error("Unknown region: {$regionValue}. Valid: ".implode(', ', array_map(fn ($r) => $r->value, ForecastRegion::cases())));
+            if (! $scenario) {
+                $this->error("Scenario '{$scenarioName}' not found for year {$year}.");
 
                 return self::FAILURE;
             }
-        }
 
-        if ($allRegions) {
-            return $this->generateAllRegions($scenario, $year, $forecastService, $trackingService, $aggregator);
-        }
+            // Resolve region
+            $regionValue = $this->option('region');
+            $allRegions = $this->option('all-regions');
+            $region = null;
 
-        return $this->generateSingle($scenario, $year, $region, $forecastService, $trackingService);
+            if ($regionValue) {
+                $region = ForecastRegion::tryFrom($regionValue);
+                if (! $region) {
+                    $this->error("Unknown region: {$regionValue}. Valid: ".implode(', ', array_map(fn ($r) => $r->value, ForecastRegion::cases())));
+
+                    return self::FAILURE;
+                }
+            }
+
+            if ($allRegions) {
+                return $this->generateAllRegions($scenario, $year, $forecastService, $trackingService, $aggregator);
+            }
+
+            return $this->generateSingle($scenario, $year, $region, $forecastService, $trackingService);
+        } catch (\Throwable $e) {
+            Log::error('GenerateDemandForecastCommand failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
+        }
     }
 
     private function generateSingle(

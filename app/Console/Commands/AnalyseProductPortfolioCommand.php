@@ -6,6 +6,7 @@ use App\Services\Analysis\ProductPortfolioService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 #[Signature('products:analyse-portfolio {--detail : Show individual product drilldown}')]
 #[Description('Analyse product portfolio: acquisition profiles, transition matrix, margins, timing')]
@@ -13,15 +14,22 @@ class AnalyseProductPortfolioCommand extends Command
 {
     public function handle(ProductPortfolioService $service): int
     {
-        $detail = $this->option('detail');
+        try {
+            $detail = $this->option('detail');
 
-        $this->scorecard($service);
-        $this->acquisitionProfile($service, $detail);
-        $this->transitionMatrix($service, $detail);
-        $this->marginProfile($service, $detail);
-        $this->timingProfile($service, $detail);
+            $this->scorecard($service);
+            $this->acquisitionProfile($service, $detail);
+            $this->transitionMatrix($service, $detail);
+            $this->marginProfile($service, $detail);
+            $this->timingProfile($service, $detail);
 
-        return self::SUCCESS;
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            Log::error('AnalyseProductPortfolioCommand failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
+        }
     }
 
     private function scorecard(ProductPortfolioService $service): void

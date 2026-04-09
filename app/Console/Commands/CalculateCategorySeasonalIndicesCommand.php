@@ -8,6 +8,7 @@ use App\Services\Forecast\Demand\CategorySeasonalCalculator;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 #[Signature('forecast:calculate-seasonal {--category= : Calculate for a specific product category} {--region= : Calculate for a specific region (e.g. de, eu_alpine)} {--all-regions : Calculate for all regions plus global}')]
 #[Description('Calculate monthly seasonal indices per product category and forecast group')]
@@ -15,26 +16,33 @@ class CalculateCategorySeasonalIndicesCommand extends Command
 {
     public function handle(CategorySeasonalCalculator $calculator): int
     {
-        $regionValue = $this->option('region');
-        $allRegions = $this->option('all-regions');
-        $categoryValue = $this->option('category');
+        try {
+            $regionValue = $this->option('region');
+            $allRegions = $this->option('all-regions');
+            $categoryValue = $this->option('category');
 
-        $region = null;
-        if ($regionValue) {
-            $region = ForecastRegion::tryFrom($regionValue);
+            $region = null;
+            if ($regionValue) {
+                $region = ForecastRegion::tryFrom($regionValue);
 
-            if (! $region) {
-                $this->error("Unknown region: {$regionValue}. Valid: ".implode(', ', array_map(fn ($r) => $r->value, ForecastRegion::cases())));
+                if (! $region) {
+                    $this->error("Unknown region: {$regionValue}. Valid: ".implode(', ', array_map(fn ($r) => $r->value, ForecastRegion::cases())));
 
-                return self::FAILURE;
+                    return self::FAILURE;
+                }
             }
-        }
 
-        if ($allRegions) {
-            return $this->calculateAllRegions($calculator, $categoryValue);
-        }
+            if ($allRegions) {
+                return $this->calculateAllRegions($calculator, $categoryValue);
+            }
 
-        return $this->calculateForRegion($calculator, $region, $categoryValue);
+            return $this->calculateForRegion($calculator, $region, $categoryValue);
+        } catch (\Throwable $e) {
+            Log::error('CalculateCategorySeasonalIndicesCommand failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
+        }
     }
 
     private function calculateAllRegions(CategorySeasonalCalculator $calculator, ?string $categoryValue): int

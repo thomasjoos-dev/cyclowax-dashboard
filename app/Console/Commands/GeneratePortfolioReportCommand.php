@@ -11,6 +11,7 @@ use App\Services\Support\AnalysisPdfService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 #[Signature('products:portfolio-report')]
 #[Description('Generate Portfolio Product Map PDF report')]
@@ -23,57 +24,64 @@ class GeneratePortfolioReportCommand extends Command
         RepeatProbabilityService $repeatService,
         ProductPathwayService $pathwayService,
     ): int {
-        $this->info('Generating Portfolio Product Map report...');
+        try {
+            $this->info('Generating Portfolio Product Map report...');
 
-        $scorecard = $portfolio->portfolioScorecard();
-        $acquisition = $portfolio->acquisitionProfile();
-        $transitions = $portfolio->transitionMatrix();
-        $productTransitions = $portfolio->transitionMatrix(drillDown: true);
-        $timing = $portfolio->timingProfile();
-        $ladder = $ladderService->ladder();
-        $repeatProbability = $repeatService->byCategory();
-        $starterKitPathways = $pathwayService->nextPurchase('starter_kit');
-        $waxKitPathways = $pathwayService->nextPurchase('wax_kit');
-        $threeStepJourney = $pathwayService->threeStepJourney();
+            $scorecard = $portfolio->portfolioScorecard();
+            $acquisition = $portfolio->acquisitionProfile();
+            $transitions = $portfolio->transitionMatrix();
+            $productTransitions = $portfolio->transitionMatrix(drillDown: true);
+            $timing = $portfolio->timingProfile();
+            $ladder = $ladderService->ladder();
+            $repeatProbability = $repeatService->byCategory();
+            $starterKitPathways = $pathwayService->nextPurchase('starter_kit');
+            $waxKitPathways = $pathwayService->nextPurchase('wax_kit');
+            $threeStepJourney = $pathwayService->threeStepJourney();
 
-        $totalCustomers = collect($ladder)->sum('customers');
-        $totalRevenue = collect($ladder)->sum('total_revenue');
-        $repeaters = collect($ladder)->where('order_count', '>', 1)->sum('customers');
-        $repeaterRevenue = collect($ladder)->where('order_count', '>', 1)->sum('total_revenue');
-        $repeatRate = round($repeaters * 100 / $totalCustomers, 1);
-        $avgLtvRepeaters = $repeaters > 0 ? round($repeaterRevenue / $repeaters) : 0;
+            $totalCustomers = collect($ladder)->sum('customers');
+            $totalRevenue = collect($ladder)->sum('total_revenue');
+            $repeaters = collect($ladder)->where('order_count', '>', 1)->sum('customers');
+            $repeaterRevenue = collect($ladder)->where('order_count', '>', 1)->sum('total_revenue');
+            $repeatRate = round($repeaters * 100 / $totalCustomers, 1);
+            $avgLtvRepeaters = $repeaters > 0 ? round($repeaterRevenue / $repeaters) : 0;
 
-        $data = [
-            'title' => 'Portfolio Product Map',
-            'subtitle' => 'Behavioral Sequencing Analysis — Product portfolio 2024+',
-            'context' => 'Leadership Team Update',
-            'quote' => 'Always a clean chain',
-            'intro' => 'Analyse van '.number_format($totalCustomers).' klanten en hun aankoopgedrag op productniveau. '
-                .'Dit rapport identificeert de rol van elk producttype in de customer journey: welke producten brengen klanten binnen, '
-                .'welke stimuleren herhaalaankopen, en welke flows leiden tot de hoogste lifetime value. '
-                .'COGS coverage: 99,5% van revenue (2024+ scope).',
-            'metrics' => [
-                ['label' => 'Klanten (2024+)', 'value' => number_format($totalCustomers), 'change' => number_format($repeaters).' herbestelden'],
-                ['label' => 'Second Purchase Rate', 'value' => $repeatRate.'%', 'change' => 'van 1e naar 2e order'],
-                ['label' => 'LTV Repeaters', 'value' => '€'.number_format($avgLtvRepeaters), 'change' => 'gem. bij 2+ orders'],
-                ['label' => 'Revenue Repeaters', 'value' => round($repeaterRevenue * 100 / $totalRevenue, 1).'%', 'change' => 'van totale revenue'],
-            ],
-            'sections' => $this->buildSections(
-                $scorecard, $acquisition, $transitions, $timing,
-                $ladder, $repeatProbability,
-                $starterKitPathways, $waxKitPathways, $threeStepJourney,
-                $totalCustomers, $totalRevenue
-            ),
-        ];
+            $data = [
+                'title' => 'Portfolio Product Map',
+                'subtitle' => 'Behavioral Sequencing Analysis — Product portfolio 2024+',
+                'context' => 'Leadership Team Update',
+                'quote' => 'Always a clean chain',
+                'intro' => 'Analyse van '.number_format($totalCustomers).' klanten en hun aankoopgedrag op productniveau. '
+                    .'Dit rapport identificeert de rol van elk producttype in de customer journey: welke producten brengen klanten binnen, '
+                    .'welke stimuleren herhaalaankopen, en welke flows leiden tot de hoogste lifetime value. '
+                    .'COGS coverage: 99,5% van revenue (2024+ scope).',
+                'metrics' => [
+                    ['label' => 'Klanten (2024+)', 'value' => number_format($totalCustomers), 'change' => number_format($repeaters).' herbestelden'],
+                    ['label' => 'Second Purchase Rate', 'value' => $repeatRate.'%', 'change' => 'van 1e naar 2e order'],
+                    ['label' => 'LTV Repeaters', 'value' => '€'.number_format($avgLtvRepeaters), 'change' => 'gem. bij 2+ orders'],
+                    ['label' => 'Revenue Repeaters', 'value' => round($repeaterRevenue * 100 / $totalRevenue, 1).'%', 'change' => 'van totale revenue'],
+                ],
+                'sections' => $this->buildSections(
+                    $scorecard, $acquisition, $transitions, $timing,
+                    $ladder, $repeatProbability,
+                    $starterKitPathways, $waxKitPathways, $threeStepJourney,
+                    $totalCustomers, $totalRevenue
+                ),
+            ];
 
-        $this->info('Rendering PDF...');
-        $draftPath = $pdf->save($data, 'portfolio-product-map_draft-1.pdf');
-        $this->info("Draft saved: {$draftPath}");
+            $this->info('Rendering PDF...');
+            $draftPath = $pdf->save($data, 'portfolio-product-map_draft-1.pdf');
+            $this->info("Draft saved: {$draftPath}");
 
-        $paths = $pdf->finalize($draftPath, 'portfolio-product-map.pdf');
-        $this->info("Finalized: {$paths['desktop']}");
+            $paths = $pdf->finalize($draftPath, 'portfolio-product-map.pdf');
+            $this->info("Finalized: {$paths['desktop']}");
 
-        return self::SUCCESS;
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            Log::error('GeneratePortfolioReportCommand failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
+        }
     }
 
     private function buildSections(

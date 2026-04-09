@@ -96,14 +96,14 @@ function setupForecastScenario(): Scenario
     }
 
     // Create product mixes (shares must sum to ~1.0 per type)
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::StarterKit->value,
         'acq_share' => 0.65,
         'repeat_share' => 0.35,
         'avg_unit_price' => 200.00,
     ]);
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::WaxTablet->value,
         'acq_share' => 0.35,
@@ -114,7 +114,7 @@ function setupForecastScenario(): Scenario
     // Create seasonal indices (flat = 1.0 for simplicity)
     foreach ([ProductCategory::StarterKit, ProductCategory::WaxTablet] as $cat) {
         for ($m = 1; $m <= 12; $m++) {
-            SeasonalIndex::create([
+            SeasonalIndex::factory()->create([
                 'month' => $m,
                 'region' => null,
                 'product_category' => $cat->value,
@@ -128,7 +128,7 @@ function setupForecastScenario(): Scenario
     // Create group indices as fallback
     foreach (ForecastGroup::cases() as $group) {
         for ($m = 1; $m <= 12; $m++) {
-            SeasonalIndex::create([
+            SeasonalIndex::factory()->create([
                 'month' => $m,
                 'region' => null,
                 'product_category' => null,
@@ -258,14 +258,14 @@ it('throws InvalidProductMixException when acq_share sum exceeds tolerance', fun
 
     // Override mixes with shares that sum to 1.30
     ScenarioProductMix::where('scenario_id', $scenario->id)->delete();
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::StarterKit->value,
         'acq_share' => 0.80,
         'repeat_share' => 0.50,
         'avg_unit_price' => 200.00,
     ]);
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::WaxTablet->value,
         'acq_share' => 0.50,
@@ -284,14 +284,14 @@ it('throws InvalidProductMixException when repeat_share sum is below tolerance',
 
     // Override mixes with repeat shares that sum to 0.30
     ScenarioProductMix::where('scenario_id', $scenario->id)->delete();
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::StarterKit->value,
         'acq_share' => 0.50,
         'repeat_share' => 0.10,
         'avg_unit_price' => 200.00,
     ]);
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::WaxTablet->value,
         'acq_share' => 0.50,
@@ -309,14 +309,14 @@ it('throws InvalidProductMixException when individual share is out of range', fu
     $scenario = setupForecastScenario();
 
     ScenarioProductMix::where('scenario_id', $scenario->id)->delete();
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::StarterKit->value,
         'acq_share' => 1.50,
         'repeat_share' => 0.50,
         'avg_unit_price' => 200.00,
     ]);
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::WaxTablet->value,
         'acq_share' => -0.50,
@@ -340,14 +340,14 @@ it('throws InsufficientBaselineException when no Q1 data exists', function () {
         'repeat_rate' => 0.20,
         'repeat_aov' => 80.00,
     ]);
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::StarterKit->value,
         'acq_share' => 0.50,
         'repeat_share' => 0.50,
         'avg_unit_price' => 200.00,
     ]);
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->create([
         'scenario_id' => $scenario->id,
         'product_category' => ProductCategory::WaxTablet->value,
         'acq_share' => 0.50,

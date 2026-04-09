@@ -7,6 +7,7 @@ use App\Services\Support\AnalysisPdfService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 #[Signature('report:march-dtc')]
 #[Description('Generate March 2026 DTC sales report with PWK pre-order forecast')]
@@ -24,43 +25,50 @@ class GenerateMarchDtcReportCommand extends Command
 
     public function handle(AnalysisPdfService $pdf, DtcSalesQueryService $dtcQuery): int
     {
-        $this->info('Gathering March DTC data...');
+        try {
+            $this->info('Gathering March DTC data...');
 
-        $totals = $dtcQuery->orderTotals(self::PERIOD_START, self::PERIOD_END);
-        $products = $dtcQuery->productSales(self::PERIOD_START, self::PERIOD_END);
-        $categories = $dtcQuery->categorySales(self::PERIOD_START, self::PERIOD_END);
-        $countries = $dtcQuery->countrySales(self::PERIOD_START, self::PERIOD_END);
-        $provinces = $dtcQuery->provinceSales(self::PERIOD_START, self::PERIOD_END);
-        $pwkMonthly = $dtcQuery->monthlySales('2026-01-01', self::PERIOD_END, skuPrefix: self::PWK_SKU);
-        $pwkWeekly = $dtcQuery->weeklySales('2026-01-01', self::PERIOD_END, skuPrefix: self::PWK_SKU);
+            $totals = $dtcQuery->orderTotals(self::PERIOD_START, self::PERIOD_END);
+            $products = $dtcQuery->productSales(self::PERIOD_START, self::PERIOD_END);
+            $categories = $dtcQuery->categorySales(self::PERIOD_START, self::PERIOD_END);
+            $countries = $dtcQuery->countrySales(self::PERIOD_START, self::PERIOD_END);
+            $provinces = $dtcQuery->provinceSales(self::PERIOD_START, self::PERIOD_END);
+            $pwkMonthly = $dtcQuery->monthlySales('2026-01-01', self::PERIOD_END, skuPrefix: self::PWK_SKU);
+            $pwkWeekly = $dtcQuery->weeklySales('2026-01-01', self::PERIOD_END, skuPrefix: self::PWK_SKU);
 
-        $this->info('Building PDF...');
+            $this->info('Building PDF...');
 
-        $data = [
-            'title' => 'DTC Sales — Maart 2026',
-            'subtitle' => 'Product sales + Performance Wax Kit pre-order forecast',
-            'context' => 'Overleg Jakob',
-            'quote' => 'Always a clean chain',
-            'landscape' => true,
-            'intro' => 'Overzicht DTC verkoop maart 2026 (data t/m '.self::DATA_CUTOFF.'). '
-                .'Inclusief 3-scenario forecast voor de Performance Wax Kit pre-order t/m eind mei 2026.',
-            'metrics' => [
-                ['label' => 'Orders', 'value' => number_format($totals->total_orders), 'change' => 'data t/m 25 maart'],
-                ['label' => 'Bruto omzet', 'value' => '€'.number_format($totals->total_revenue, 0, ',', '.'), 'change' => 'incl. shipping & tax'],
-                ['label' => 'Netto omzet', 'value' => '€'.number_format($totals->total_net_revenue, 0, ',', '.'), 'change' => '€'.number_format($totals->total_discounts, 0, ',', '.').' korting'],
-                ['label' => 'Gross margin', 'value' => '€'.number_format($totals->total_gross_margin, 0, ',', '.'), 'change' => round($totals->total_gross_margin * 100 / max($totals->total_revenue, 1)).'% op bruto'],
-            ],
-            'sections' => $this->buildSections($products, $categories, $countries, $provinces, $pwkMonthly, $pwkWeekly),
-        ];
+            $data = [
+                'title' => 'DTC Sales — Maart 2026',
+                'subtitle' => 'Product sales + Performance Wax Kit pre-order forecast',
+                'context' => 'Overleg Jakob',
+                'quote' => 'Always a clean chain',
+                'landscape' => true,
+                'intro' => 'Overzicht DTC verkoop maart 2026 (data t/m '.self::DATA_CUTOFF.'). '
+                    .'Inclusief 3-scenario forecast voor de Performance Wax Kit pre-order t/m eind mei 2026.',
+                'metrics' => [
+                    ['label' => 'Orders', 'value' => number_format($totals->total_orders), 'change' => 'data t/m 25 maart'],
+                    ['label' => 'Bruto omzet', 'value' => '€'.number_format($totals->total_revenue, 0, ',', '.'), 'change' => 'incl. shipping & tax'],
+                    ['label' => 'Netto omzet', 'value' => '€'.number_format($totals->total_net_revenue, 0, ',', '.'), 'change' => '€'.number_format($totals->total_discounts, 0, ',', '.').' korting'],
+                    ['label' => 'Gross margin', 'value' => '€'.number_format($totals->total_gross_margin, 0, ',', '.'), 'change' => round($totals->total_gross_margin * 100 / max($totals->total_revenue, 1)).'% op bruto'],
+                ],
+                'sections' => $this->buildSections($products, $categories, $countries, $provinces, $pwkMonthly, $pwkWeekly),
+            ];
 
-        $this->info('Rendering PDF...');
-        $draftPath = $pdf->save($data, 'march-dtc-2026_draft-1.pdf');
-        $this->info("Draft saved: {$draftPath}");
+            $this->info('Rendering PDF...');
+            $draftPath = $pdf->save($data, 'march-dtc-2026_draft-1.pdf');
+            $this->info("Draft saved: {$draftPath}");
 
-        $paths = $pdf->finalize($draftPath, 'march-dtc-2026.pdf');
-        $this->info("Finalized: {$paths['desktop']}");
+            $paths = $pdf->finalize($draftPath, 'march-dtc-2026.pdf');
+            $this->info("Finalized: {$paths['desktop']}");
 
-        return self::SUCCESS;
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            Log::error('GenerateMarchDtcReportCommand failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
+        }
     }
 
     /**

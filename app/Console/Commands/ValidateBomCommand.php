@@ -8,6 +8,7 @@ use App\Services\Forecast\Supply\BomExplosionService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 #[Signature('forecast:validate-bom')]
 #[Description('Validate BOM integrity: missing BOMs, empty explosions, circular references')]
@@ -15,81 +16,88 @@ class ValidateBomCommand extends Command
 {
     public function handle(BomExplosionService $bomService): int
     {
-        $this->info('Validating BOM structures...');
+        try {
+            $this->info('Validating BOM structures...');
 
-        $boms = ProductBom::with('product')->get();
-        $allProducts = Product::whereNotNull('product_category')->get();
+            $boms = ProductBom::with('product')->get();
+            $allProducts = Product::whereNotNull('product_category')->get();
 
-        // 1. Products with BOMs — validate explosion
-        $issues = [];
-        $valid = 0;
+            // 1. Products with BOMs — validate explosion
+            $issues = [];
+            $valid = 0;
 
-        foreach ($boms as $bom) {
-            $product = $bom->product;
+            foreach ($boms as $bom) {
+                $product = $bom->product;
 
-            if (! $product) {
-                $issues[] = [
-                    'BOM #'.$bom->id,
-                    '—',
-                    'orphan_bom',
-                    'BOM exists but product is missing',
-                ];
+                if (! $product) {
+                    $issues[] = [
+                        'BOM #'.$bom->id,
+                        '—',
+                        'orphan_bom',
+                        'BOM exists but product is missing',
+                    ];
 
-                continue;
+                    continue;
+                }
+
+                $components = $bomService->explode($product->id);
+
+                if (count($components) === 0) {
+                    $issues[] = [
+                        $product->sku ?? '—',
+                        $product->name ?? '—',
+                        'empty_explosion',
+                        'BOM explodes to zero components (possible circular ref or missing lines)',
+                    ];
+
+                    continue;
+                }
+
+                // Check for components without procurement lead time
+                $noLt = collect($components)->filter(fn (array $c) => $c['procurement_lt'] === null);
+
+                if ($noLt->isNotEmpty()) {
+                    $skus = $noLt->pluck('sku')->implode(', ');
+                    $issues[] = [
+                        $product->sku ?? '—',
+                        $product->name ?? '—',
+                        'missing_lead_time',
+                        "Components without procurement LT: {$skus}",
+                    ];
+                }
+
+                $valid++;
             }
 
-            $components = $bomService->explode($product->id);
+            // 2. Finished products without BOMs (have a category, are sellable, but no BOM)
+            $bomProductIds = $boms->pluck('product_id')->toArray();
+            $noBom = $allProducts->filter(fn (Product $p) => ! in_array($p->id, $bomProductIds) && $p->product_category->forecastGroup() !== null);
 
-            if (count($components) === 0) {
-                $issues[] = [
-                    $product->sku ?? '—',
-                    $product->name ?? '—',
-                    'empty_explosion',
-                    'BOM explodes to zero components (possible circular ref or missing lines)',
-                ];
-
-                continue;
+            if ($noBom->isNotEmpty()) {
+                foreach ($noBom as $product) {
+                    $issues[] = [
+                        $product->sku ?? '—',
+                        $product->name ?? '—',
+                        'no_bom',
+                        'Forecastable product has no BOM defined',
+                    ];
+                }
             }
 
-            // Check for components without procurement lead time
-            $noLt = collect($components)->filter(fn (array $c) => $c['procurement_lt'] === null);
-
-            if ($noLt->isNotEmpty()) {
-                $skus = $noLt->pluck('sku')->implode(', ');
-                $issues[] = [
-                    $product->sku ?? '—',
-                    $product->name ?? '—',
-                    'missing_lead_time',
-                    "Components without procurement LT: {$skus}",
-                ];
+            // Display results
+            if (count($issues) > 0) {
+                $this->warn(count($issues).' issue(s) found:');
+                $this->table(['SKU', 'Name', 'Issue', 'Detail'], $issues);
             }
 
-            $valid++;
+            $this->info("{$valid} BOMs validated successfully, {$noBom->count()} products without BOM, ".count($issues).' total issue(s).');
+
+            return count($issues) > 0 ? self::FAILURE : self::SUCCESS;
+        } catch (\Throwable $e) {
+            Log::error('ValidateBomCommand failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
         }
-
-        // 2. Finished products without BOMs (have a category, are sellable, but no BOM)
-        $bomProductIds = $boms->pluck('product_id')->toArray();
-        $noBom = $allProducts->filter(fn (Product $p) => ! in_array($p->id, $bomProductIds) && $p->product_category->forecastGroup() !== null);
-
-        if ($noBom->isNotEmpty()) {
-            foreach ($noBom as $product) {
-                $issues[] = [
-                    $product->sku ?? '—',
-                    $product->name ?? '—',
-                    'no_bom',
-                    'Forecastable product has no BOM defined',
-                ];
-            }
-        }
-
-        // Display results
-        if (count($issues) > 0) {
-            $this->warn(count($issues).' issue(s) found:');
-            $this->table(['SKU', 'Name', 'Issue', 'Detail'], $issues);
-        }
-
-        $this->info("{$valid} BOMs validated successfully, {$noBom->count()} products without BOM, ".count($issues).' total issue(s).');
-
-        return count($issues) > 0 ? self::FAILURE : self::SUCCESS;
     }
 }

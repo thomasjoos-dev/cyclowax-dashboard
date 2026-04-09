@@ -43,104 +43,111 @@ class SyncAllCommand extends Command
 
     public function handle(): int
     {
-        if (! $this->validateCredentials()) {
-            return self::FAILURE;
-        }
+        try {
+            if (! $this->validateCredentials()) {
+                return self::FAILURE;
+            }
 
-        $this->resetStaleSyncStates();
+            $this->resetStaleSyncStates();
 
-        $pipelineStart = microtime(true);
-        $isFull = (bool) $this->option('full');
+            $pipelineStart = microtime(true);
+            $isFull = (bool) $this->option('full');
 
-        $this->components->info('Starting sync pipeline'.($isFull ? ' (full sync)' : ' (incremental)').'...');
+            $this->components->info('Starting sync pipeline'.($isFull ? ' (full sync)' : ' (incremental)').'...');
 
-        $steps = [
-            ['shopify:sync-orders', 'Shopify order sync'],
-            ['odoo:parallel', 'Odoo parallel sync'],
-            ['klaviyo:sync-profiles', 'Klaviyo profile sync'],
-            ['klaviyo:sync-campaigns', 'Klaviyo campaign sync'],
-            ['orders:compute-margins', 'Margin computation'],
-            ['customers:calculate-rfm', 'RFM scoring'],
-            ['klaviyo:sync-engagement', 'Klaviyo engagement sync'],
-            ['profiles:flag-suspects', 'Bot/spam detection'],
-            ['profiles:link', 'Rider profile linking'],
-            ['profiles:score-followers', 'Follower engagement scoring'],
-            ['klaviyo:sync-segments', 'Klaviyo segment sync'],
-            ['shopify:sync-segments', 'Shopify segment tag sync'],
-        ];
+            $steps = [
+                ['shopify:sync-orders', 'Shopify order sync'],
+                ['odoo:parallel', 'Odoo parallel sync'],
+                ['klaviyo:sync-profiles', 'Klaviyo profile sync'],
+                ['klaviyo:sync-campaigns', 'Klaviyo campaign sync'],
+                ['orders:compute-margins', 'Margin computation'],
+                ['customers:calculate-rfm', 'RFM scoring'],
+                ['klaviyo:sync-engagement', 'Klaviyo engagement sync'],
+                ['profiles:flag-suspects', 'Bot/spam detection'],
+                ['profiles:link', 'Rider profile linking'],
+                ['profiles:score-followers', 'Follower engagement scoring'],
+                ['klaviyo:sync-segments', 'Klaviyo segment sync'],
+                ['shopify:sync-segments', 'Shopify segment tag sync'],
+            ];
 
-        $failures = 0;
-        $needsMoreRuns = false;
+            $failures = 0;
+            $needsMoreRuns = false;
 
-        foreach ($steps as [$command, $label]) {
-            // Parallel groups: run simultaneously when resources allow, otherwise sequential
-            if (isset(self::PARALLEL_GROUPS[$command])) {
-                if ($this->canRunParallel()) {
-                    $this->runParallelSteps(self::PARALLEL_GROUPS[$command], $label, $isFull, $failures);
-                } else {
-                    $this->components->info("[{$label}] Running sequentially (limited resources).");
-                    foreach (self::PARALLEL_GROUPS[$command] as [$subCommand, $subLabel]) {
-                        $this->runStep($subCommand, $subLabel, $isFull, $failures);
-                        if ($failures > 0) {
-                            break;
+            foreach ($steps as [$command, $label]) {
+                // Parallel groups: run simultaneously when resources allow, otherwise sequential
+                if (isset(self::PARALLEL_GROUPS[$command])) {
+                    if ($this->canRunParallel()) {
+                        $this->runParallelSteps(self::PARALLEL_GROUPS[$command], $label, $isFull, $failures);
+                    } else {
+                        $this->components->info("[{$label}] Running sequentially (limited resources).");
+                        foreach (self::PARALLEL_GROUPS[$command] as [$subCommand, $subLabel]) {
+                            $this->runStep($subCommand, $subLabel, $isFull, $failures);
+                            if ($failures > 0) {
+                                break;
+                            }
                         }
                     }
+                    if ($failures > 0) {
+                        break;
+                    }
+
+                    continue;
                 }
-                if ($failures > 0) {
+
+                // Skip steps that completed during this pipeline cycle
+                if ($this->isRecentlyCompleted($command, $pipelineStart)) {
+                    $this->components->info("[{$label}] Already completed this cycle, skipping.");
+
+                    continue;
+                }
+
+                $this->runStep($command, $label, $isFull, $failures);
+
+                // For cursor-aware commands: check if the step needs more runs
+                if (in_array($command, self::CURSOR_AWARE_COMMANDS) && SyncState::isIncomplete($command)) {
+                    $needsMoreRuns = true;
+                    $this->components->warn("Pipeline paused: {$label} needs more runs. Scheduler will resume.");
                     break;
                 }
 
-                continue;
+                if ($failures > 0) {
+                    break;
+                }
             }
 
-            // Skip steps that completed during this pipeline cycle
-            if ($this->isRecentlyCompleted($command, $pipelineStart)) {
-                $this->components->info("[{$label}] Already completed this cycle, skipping.");
-
-                continue;
+            if (! $needsMoreRuns) {
+                app(DashboardService::class)->flushCache();
+                $this->components->info('Dashboard cache flushed.');
             }
 
-            $this->runStep($command, $label, $isFull, $failures);
+            $duration = round(microtime(true) - $pipelineStart, 1);
 
-            // For cursor-aware commands: check if the step needs more runs
-            if (in_array($command, self::CURSOR_AWARE_COMMANDS) && SyncState::isIncomplete($command)) {
-                $needsMoreRuns = true;
-                $this->components->warn("Pipeline paused: {$label} needs more runs. Scheduler will resume.");
-                break;
-            }
+            $this->newLine();
 
             if ($failures > 0) {
-                break;
+                $this->components->warn("Pipeline stopped with {$failures} failure(s) in {$duration}s.");
+                Log::warning('Sync pipeline stopped with failures', ['failures' => $failures, 'duration' => $duration]);
+
+                return self::FAILURE;
             }
-        }
 
-        if (! $needsMoreRuns) {
-            app(DashboardService::class)->flushCache();
-            $this->components->info('Dashboard cache flushed.');
-        }
+            if ($needsMoreRuns) {
+                $this->components->info("Pipeline paused after {$duration}s. Will resume on next scheduler run.");
+                Log::info('Sync pipeline paused for continuation', ['duration' => $duration]);
 
-        $duration = round(microtime(true) - $pipelineStart, 1);
+                return self::SUCCESS;
+            }
 
-        $this->newLine();
+            $this->components->info("Pipeline completed successfully in {$duration}s.");
+            Log::info('Sync pipeline completed', ['duration' => $duration, 'full' => $isFull]);
 
-        if ($failures > 0) {
-            $this->components->warn("Pipeline stopped with {$failures} failure(s) in {$duration}s.");
-            Log::warning('Sync pipeline stopped with failures', ['failures' => $failures, 'duration' => $duration]);
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            Log::error('SyncAllCommand failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            $this->components->error($e->getMessage());
 
             return self::FAILURE;
         }
-
-        if ($needsMoreRuns) {
-            $this->components->info("Pipeline paused after {$duration}s. Will resume on next scheduler run.");
-            Log::info('Sync pipeline paused for continuation', ['duration' => $duration]);
-
-            return self::SUCCESS;
-        }
-
-        $this->components->info("Pipeline completed successfully in {$duration}s.");
-        Log::info('Sync pipeline completed', ['duration' => $duration, 'full' => $isFull]);
-
-        return self::SUCCESS;
     }
 
     /**

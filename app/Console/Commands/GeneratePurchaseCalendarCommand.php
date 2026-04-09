@@ -11,6 +11,7 @@ use App\Services\Forecast\Supply\PurchaseCalendarTrackingService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 #[Signature('forecast:purchase-calendar {scenario : Scenario name (e.g. base)} {--year= : Forecast year (defaults to current)} {--warehouse= : Generate for a specific warehouse (be, us)} {--export : Export to CSV on Desktop}')]
 #[Description('Generate purchase + production calendar based on demand forecast, BOM explosion and stock netting')]
@@ -18,55 +19,62 @@ class GeneratePurchaseCalendarCommand extends Command
 {
     public function handle(PurchaseCalendarTrackingService $trackingService, ComponentNettingService $netting): int
     {
-        $scenarioName = $this->argument('scenario');
-        $year = (int) ($this->option('year') ?? now()->year);
+        try {
+            $scenarioName = $this->argument('scenario');
+            $year = (int) ($this->option('year') ?? now()->year);
 
-        $scenario = Scenario::where('name', $scenarioName)->where('year', $year)->first();
+            $scenario = Scenario::where('name', $scenarioName)->where('year', $year)->first();
 
-        if (! $scenario) {
-            $this->error("Scenario '{$scenarioName}' not found for year {$year}.");
-
-            return self::FAILURE;
-        }
-
-        // Resolve optional warehouse filter
-        $warehouseValue = $this->option('warehouse');
-        $warehouse = null;
-        if ($warehouseValue) {
-            $warehouse = Warehouse::tryFrom($warehouseValue);
-            if (! $warehouse) {
-                $this->error("Unknown warehouse: {$warehouseValue}. Valid: ".implode(', ', array_map(fn ($w) => $w->value, Warehouse::cases())));
+            if (! $scenario) {
+                $this->error("Scenario '{$scenarioName}' not found for year {$year}.");
 
                 return self::FAILURE;
             }
-        }
 
-        // Data quality warnings
-        $this->checkStockFreshness($netting);
-        $this->checkSupplyProfileValidation();
+            // Resolve optional warehouse filter
+            $warehouseValue = $this->option('warehouse');
+            $warehouse = null;
+            if ($warehouseValue) {
+                $warehouse = Warehouse::tryFrom($warehouseValue);
+                if (! $warehouse) {
+                    $this->error("Unknown warehouse: {$warehouseValue}. Valid: ".implode(', ', array_map(fn ($w) => $w->value, Warehouse::cases())));
 
-        $warehouseLabel = $warehouse ? " [{$warehouse->label()}]" : '';
-        $this->info("Generating purchase + production calendar: {$scenario->label} ({$year}){$warehouseLabel}...");
-        $this->newLine();
+                    return self::FAILURE;
+                }
+            }
 
-        $run = $trackingService->record($scenario, $year, $warehouse);
+            // Data quality warnings
+            $this->checkStockFreshness($netting);
+            $this->checkSupplyProfileValidation();
 
-        if ($run->events->isEmpty()) {
-            $this->warn('No events generated. Check forecast data and BOM configuration.');
+            $warehouseLabel = $warehouse ? " [{$warehouse->label()}]" : '';
+            $this->info("Generating purchase + production calendar: {$scenario->label} ({$year}){$warehouseLabel}...");
+            $this->newLine();
+
+            $run = $trackingService->record($scenario, $year, $warehouse);
+
+            if ($run->events->isEmpty()) {
+                $this->warn('No events generated. Check forecast data and BOM configuration.');
+
+                return self::SUCCESS;
+            }
+
+            $this->renderRun($run);
+
+            // CSV export
+            if ($this->option('export')) {
+                $this->exportCsv($run);
+            }
+
+            $this->info("Persisted: {$run->events->count()} events (generated_at: {$run->generated_at->format('Y-m-d H:i')})");
 
             return self::SUCCESS;
+        } catch (\Throwable $e) {
+            Log::error('GeneratePurchaseCalendarCommand failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
         }
-
-        $this->renderRun($run);
-
-        // CSV export
-        if ($this->option('export')) {
-            $this->exportCsv($run);
-        }
-
-        $this->info("Persisted: {$run->events->count()} events (generated_at: {$run->generated_at->format('Y-m-d H:i')})");
-
-        return self::SUCCESS;
     }
 
     private function renderRun(PurchaseCalendarRun $run): void

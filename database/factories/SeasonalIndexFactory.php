@@ -18,7 +18,7 @@ class SeasonalIndexFactory extends Factory
     public function definition(): array
     {
         return [
-            'month' => fake()->unique()->numberBetween(1, 12),
+            'month' => fake()->numberBetween(1, 12),
             'index_value' => fake()->randomFloat(4, 0.5, 1.8),
             'region' => null,
             'source' => 'calculated',

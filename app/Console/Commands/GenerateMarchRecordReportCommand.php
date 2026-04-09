@@ -7,6 +7,7 @@ use App\Services\Support\AnalysisPdfService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 #[Signature('report:march-record')]
 #[Description('Generate March 2026 DTC record month report for team Slack update')]
@@ -24,80 +25,87 @@ class GenerateMarchRecordReportCommand extends Command
 
     public function handle(AnalysisPdfService $pdf, DtcSalesQueryService $dtcQuery): int
     {
-        $this->dtcQuery = $dtcQuery;
-        $this->info('Gathering March record data...');
+        try {
+            $this->dtcQuery = $dtcQuery;
+            $this->info('Gathering March record data...');
 
-        $marchTotals = $dtcQuery->orderTotals(self::PERIOD_START, self::PERIOD_END);
-        $marchPrevYear = $dtcQuery->orderTotals(self::PREV_YEAR_START, self::PREV_YEAR_END);
-        $monthlyTrend = $dtcQuery->monthlyOrderTrend('2025-01-01', '2026-04-01');
-        $weeklyPattern = $dtcQuery->weeklyOrderPattern(self::PERIOD_START, self::PERIOD_END);
-        $topProducts = $dtcQuery->topProducts(self::PERIOD_START, self::PERIOD_END);
-        $channels = $dtcQuery->channelBreakdown(self::PERIOD_START, self::PERIOD_END);
-        $countries = $dtcQuery->countrySales(self::PERIOD_START, self::PERIOD_END, 10);
-        $newCustomerProducts = $dtcQuery->productSalesByCustomerType(self::PERIOD_START, self::PERIOD_END, true);
-        $returningCustomerProducts = $dtcQuery->productSalesByCustomerType(self::PERIOD_START, self::PERIOD_END, false);
-        $pwkMonthly = $dtcQuery->monthlySales('2026-01-01', self::PERIOD_END, skuPrefix: 'SK-PWK');
+            $marchTotals = $dtcQuery->orderTotals(self::PERIOD_START, self::PERIOD_END);
+            $marchPrevYear = $dtcQuery->orderTotals(self::PREV_YEAR_START, self::PREV_YEAR_END);
+            $monthlyTrend = $dtcQuery->monthlyOrderTrend('2025-01-01', '2026-04-01');
+            $weeklyPattern = $dtcQuery->weeklyOrderPattern(self::PERIOD_START, self::PERIOD_END);
+            $topProducts = $dtcQuery->topProducts(self::PERIOD_START, self::PERIOD_END);
+            $channels = $dtcQuery->channelBreakdown(self::PERIOD_START, self::PERIOD_END);
+            $countries = $dtcQuery->countrySales(self::PERIOD_START, self::PERIOD_END, 10);
+            $newCustomerProducts = $dtcQuery->productSalesByCustomerType(self::PERIOD_START, self::PERIOD_END, true);
+            $returningCustomerProducts = $dtcQuery->productSalesByCustomerType(self::PERIOD_START, self::PERIOD_END, false);
+            $pwkMonthly = $dtcQuery->monthlySales('2026-01-01', self::PERIOD_END, skuPrefix: 'SK-PWK');
 
-        $newPct = round($marchTotals->first_orders * 100 / max($marchTotals->total_orders, 1));
-        $repeatPct = 100 - $newPct;
+            $newPct = round($marchTotals->first_orders * 100 / max($marchTotals->total_orders, 1));
+            $repeatPct = 100 - $newPct;
 
-        $this->info('Building PDF...');
+            $this->info('Building PDF...');
 
-        $data = [
-            'title' => 'DTC Revenue Report: March 2026',
-            'subtitle' => 'Hoe onze grootste online maand ooit tot stand kwam',
-            'context' => 'Slack team update',
-            'quote' => 'Always a clean chain',
-            'landscape' => false,
-            'intro' => 'Maart 2026 is de grootste online maand ooit. De lancering van de Performance Wax Kit, '
-                .'gecombineerd met het nieuwe GCN partnership en onze eigen advertising en content marketing, '
-                .'zorgde voor een recordmaand. GCN nam het product mee in hun content, wat bovenop onze eigen '
-                .'campagnes voor een enorme boost in bereik en verkoop zorgde.'
-                .'<br><br>Data loopt van 1 tot 30 maart. Thomas was te enthousiast om te wachten op de 31ste.',
-            'metrics' => [
-                [
-                    'label' => 'Netto omzet',
-                    'value' => '€'.number_format($marchTotals->net_revenue, 0, ',', '.'),
-                    'change' => 'Wat er effectief binnenkwam na belasting, kortingen en refunds',
+            $data = [
+                'title' => 'DTC Revenue Report: March 2026',
+                'subtitle' => 'Hoe onze grootste online maand ooit tot stand kwam',
+                'context' => 'Slack team update',
+                'quote' => 'Always a clean chain',
+                'landscape' => false,
+                'intro' => 'Maart 2026 is de grootste online maand ooit. De lancering van de Performance Wax Kit, '
+                    .'gecombineerd met het nieuwe GCN partnership en onze eigen advertising en content marketing, '
+                    .'zorgde voor een recordmaand. GCN nam het product mee in hun content, wat bovenop onze eigen '
+                    .'campagnes voor een enorme boost in bereik en verkoop zorgde.'
+                    .'<br><br>Data loopt van 1 tot 30 maart. Thomas was te enthousiast om te wachten op de 31ste.',
+                'metrics' => [
+                    [
+                        'label' => 'Netto omzet',
+                        'value' => '€'.number_format($marchTotals->net_revenue, 0, ',', '.'),
+                        'change' => 'Wat er effectief binnenkwam na belasting, kortingen en refunds',
+                    ],
+                    [
+                        'label' => 'Bruto marge',
+                        'value' => '€'.number_format($marchTotals->gross_margin, 0, ',', '.'),
+                        'change' => 'Wat overblijft na productkosten, verzending en betaalkosten',
+                    ],
+                    [
+                        'label' => 'Nieuwe klanten',
+                        'value' => $newPct.'%',
+                        'change' => number_format($marchTotals->first_orders).' van de '.number_format($marchTotals->total_orders).' bestellingen',
+                    ],
+                    [
+                        'label' => 'Bestaande klanten',
+                        'value' => $repeatPct.'%',
+                        'change' => number_format($marchTotals->repeat_orders).' bestellingen van klanten die eerder al kochten',
+                    ],
                 ],
-                [
-                    'label' => 'Bruto marge',
-                    'value' => '€'.number_format($marchTotals->gross_margin, 0, ',', '.'),
-                    'change' => 'Wat overblijft na productkosten, verzending en betaalkosten',
-                ],
-                [
-                    'label' => 'Nieuwe klanten',
-                    'value' => $newPct.'%',
-                    'change' => number_format($marchTotals->first_orders).' van de '.number_format($marchTotals->total_orders).' bestellingen',
-                ],
-                [
-                    'label' => 'Bestaande klanten',
-                    'value' => $repeatPct.'%',
-                    'change' => number_format($marchTotals->repeat_orders).' bestellingen van klanten die eerder al kochten',
-                ],
-            ],
-            'sections' => $this->buildSections(
-                $marchTotals,
-                $marchPrevYear,
-                $monthlyTrend,
-                $weeklyPattern,
-                $topProducts,
-                $channels,
-                $countries,
-                $newCustomerProducts,
-                $returningCustomerProducts,
-                $pwkMonthly,
-            ),
-        ];
+                'sections' => $this->buildSections(
+                    $marchTotals,
+                    $marchPrevYear,
+                    $monthlyTrend,
+                    $weeklyPattern,
+                    $topProducts,
+                    $channels,
+                    $countries,
+                    $newCustomerProducts,
+                    $returningCustomerProducts,
+                    $pwkMonthly,
+                ),
+            ];
 
-        $this->info('Rendering PDF...');
-        $draftPath = $pdf->save($data, 'march-record-2026_draft-1.pdf');
-        $this->info("Draft saved: {$draftPath}");
+            $this->info('Rendering PDF...');
+            $draftPath = $pdf->save($data, 'march-record-2026_draft-1.pdf');
+            $this->info("Draft saved: {$draftPath}");
 
-        $paths = $pdf->finalize($draftPath, 'march-record-2026.pdf');
-        $this->info("Finalized: {$paths['desktop']}");
+            $paths = $pdf->finalize($draftPath, 'march-record-2026.pdf');
+            $this->info("Finalized: {$paths['desktop']}");
 
-        return self::SUCCESS;
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            Log::error('GenerateMarchRecordReportCommand failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
+        }
     }
 
     /**

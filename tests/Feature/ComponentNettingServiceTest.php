@@ -21,20 +21,11 @@ function createProductWithStock(string $sku, float $stock, float $openPo = 0): P
     ]);
 
     if ($openPo > 0) {
-        OpenPurchaseOrder::create([
-            'odoo_po_line_id' => random_int(10000, 99999),
-            'po_reference' => 'PO-TEST-'.random_int(100, 999),
+        OpenPurchaseOrder::factory()->create([
             'product_id' => $product->id,
-            'odoo_product_id' => random_int(1000, 9999),
-            'product_name' => $product->sku,
-            'supplier_name' => 'Test Supplier',
             'quantity_ordered' => $openPo,
             'quantity_received' => 0,
             'quantity_open' => $openPo,
-            'unit_price' => 1.00,
-            'date_order' => now()->subDays(10)->format('Y-m-d'),
-            'date_planned' => now()->addDays(30)->format('Y-m-d'),
-            'state' => 'purchase',
         ]);
     }
 
@@ -266,20 +257,12 @@ test('intermediate netting shares stock cache with component netting', function 
 
 function createOpenPo(Product $product, float $qty, string $datePlanned): void
 {
-    OpenPurchaseOrder::create([
-        'odoo_po_line_id' => random_int(10000, 99999),
-        'po_reference' => 'PO-TEST-'.random_int(100, 999),
+    OpenPurchaseOrder::factory()->create([
         'product_id' => $product->id,
-        'odoo_product_id' => random_int(1000, 9999),
-        'product_name' => $product->sku,
-        'supplier_name' => 'Test Supplier',
         'quantity_ordered' => $qty,
         'quantity_received' => 0,
         'quantity_open' => $qty,
-        'unit_price' => 1.00,
-        'date_order' => now()->subDays(10)->format('Y-m-d'),
         'date_planned' => $datePlanned,
-        'state' => 'purchase',
     ]);
 }
 

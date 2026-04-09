@@ -16,6 +16,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 #[Signature('forecast:revenue-report')]
 #[Description('Generate 2026 Revenue Forecast PDF using the full demand forecast pipeline')]
@@ -40,45 +41,52 @@ class GenerateForecastReportCommand extends Command
         RegionalForecastAggregator $regionalAggregator,
         ScenarioService $scenarioService,
     ): int {
-        $this->info('Generating 2026 Revenue Forecast...');
+        try {
+            $this->info('Generating 2026 Revenue Forecast...');
 
-        $q1Actual = $baseline->periodActuals('2026-01-01', '2026-04-01');
-        $monthlyQ1 = $baseline->monthlyActuals('2026-01-01', '2026-04-01');
-        $rev2025 = $baseline->yearRevenue(2025);
+            $q1Actual = $baseline->periodActuals('2026-01-01', '2026-04-01');
+            $monthlyQ1 = $baseline->monthlyActuals('2026-01-01', '2026-04-01');
+            $rev2025 = $baseline->yearRevenue(2025);
 
-        $scenarios = $scenarioService->forYear(self::YEAR)
-            ->filter(fn (Scenario $s) => in_array($s->name, self::SCENARIO_KEYS));
+            $scenarios = $scenarioService->forYear(self::YEAR)
+                ->filter(fn (Scenario $s) => in_array($s->name, self::SCENARIO_KEYS));
 
-        $this->info('Running demand forecast for '.count($scenarios).' scenarios...');
-        $forecastData = [];
-        $categoryData = [];
-        $regionalData = [];
+            $this->info('Running demand forecast for '.count($scenarios).' scenarios...');
+            $forecastData = [];
+            $categoryData = [];
+            $regionalData = [];
 
-        foreach ($scenarios as $scenario) {
-            $key = $scenario->name;
-            $forecastData[$key] = $demandForecast->totalForecast($scenario, self::YEAR);
-            $categoryData[$key] = $demandForecast->forecastYear($scenario, self::YEAR);
+            foreach ($scenarios as $scenario) {
+                $key = $scenario->name;
+                $forecastData[$key] = $demandForecast->totalForecast($scenario, self::YEAR);
+                $categoryData[$key] = $demandForecast->forecastYear($scenario, self::YEAR);
 
-            $this->info("  Regional forecast: {$key}...");
-            $regionalData[$key] = $regionalAggregator->forecastAllRegions($scenario, self::YEAR);
+                $this->info("  Regional forecast: {$key}...");
+                $regionalData[$key] = $regionalAggregator->forecastAllRegions($scenario, self::YEAR);
+            }
+
+            $data = [
+                'title' => '2026 Revenue Forecast',
+                'subtitle' => 'DTC Intelligence Agent. Omzetforecast op basis van klantgedrag, seizoenspatronen en campagne-effecten.',
+                'context' => 'Leadership Team',
+                'quote' => 'Always a clean chain',
+                'intro' => $this->buildIntro($q1Actual, $rev2025, $forecastData),
+                'metrics' => $this->buildMetrics($q1Actual, $forecastData, $regionalData),
+                'sections' => $this->buildSections($q1Actual, $monthlyQ1, $rev2025, $forecastData, $categoryData, $regionalData, $scenarios),
+            ];
+
+            $this->info('Rendering PDF...');
+            $draftPath = $pdf->save($data, '2026-revenue-forecast_draft-1.pdf');
+            $paths = $pdf->finalize($draftPath, '2026-revenue-forecast.pdf');
+            $this->info("Finalized: {$paths['desktop']}");
+
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            Log::error('GenerateForecastReportCommand failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
         }
-
-        $data = [
-            'title' => '2026 Revenue Forecast',
-            'subtitle' => 'DTC Intelligence Agent. Omzetforecast op basis van klantgedrag, seizoenspatronen en campagne-effecten.',
-            'context' => 'Leadership Team',
-            'quote' => 'Always a clean chain',
-            'intro' => $this->buildIntro($q1Actual, $rev2025, $forecastData),
-            'metrics' => $this->buildMetrics($q1Actual, $forecastData, $regionalData),
-            'sections' => $this->buildSections($q1Actual, $monthlyQ1, $rev2025, $forecastData, $categoryData, $regionalData, $scenarios),
-        ];
-
-        $this->info('Rendering PDF...');
-        $draftPath = $pdf->save($data, '2026-revenue-forecast_draft-1.pdf');
-        $paths = $pdf->finalize($draftPath, '2026-revenue-forecast.pdf');
-        $this->info("Finalized: {$paths['desktop']}");
-
-        return self::SUCCESS;
     }
 
     private function buildIntro(array $q1Actual, float $rev2025, array $forecastData): string

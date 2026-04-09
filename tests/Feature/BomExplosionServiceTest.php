@@ -21,11 +21,8 @@ function createComponent(string $sku, string $name, ?ProductCategory $category =
 
 function createBom(Product $product, string $type = 'normal', float $productQty = 1.0, float $assemblyDays = 0): ProductBom
 {
-    static $bomCounter = 90000;
-
-    return ProductBom::create([
+    return ProductBom::factory()->create([
         'product_id' => $product->id,
-        'odoo_bom_id' => ++$bomCounter,
         'bom_type' => $type,
         'product_qty' => $productQty,
         'assembly_lead_time_days' => $assemblyDays,
@@ -34,7 +31,7 @@ function createBom(Product $product, string $type = 'normal', float $productQty 
 
 function addBomLine(ProductBom $bom, Product $component, float $quantity = 1.0): ProductBomLine
 {
-    return ProductBomLine::create([
+    return ProductBomLine::factory()->create([
         'bom_id' => $bom->id,
         'component_product_id' => $component->id,
         'quantity' => $quantity,
@@ -237,13 +234,13 @@ it('calculates effective lead time through BOM chain', function () {
     $rawFast = createComponent('LT-FAST', 'Fast Raw', ProductCategory::WaxTablet);
     $rawSlow = createComponent('LT-SLOW', 'Slow Raw', ProductCategory::Chain);
 
-    SupplyProfile::create([
+    SupplyProfile::factory()->create([
         'product_category' => ProductCategory::WaxTablet->value,
         'procurement_lead_time_days' => 14,
         'moq' => 100,
         'buffer_days' => 7,
     ]);
-    SupplyProfile::create([
+    SupplyProfile::factory()->create([
         'product_category' => ProductCategory::Chain->value,
         'procurement_lead_time_days' => 45,
         'moq' => 50,
