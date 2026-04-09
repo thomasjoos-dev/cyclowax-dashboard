@@ -8,7 +8,7 @@
 | Frontend | React 19, TypeScript, Inertia v2 |
 | Styling | Tailwind CSS v4, ShadCN UI, tweakcn Lara theme |
 | Charts | Recharts |
-| Database | SQLite (local), migreerbaar naar MySQL/PostgreSQL |
+| Database | PostgreSQL 17 (local + staging) |
 | Auth | Fortify (session/login), Sanctum (API tokens) |
 | Shopify | GraphQL Admin API (2025-04), custom client |
 | Odoo | JSON-RPC External API, custom client |
@@ -270,7 +270,7 @@ Shared Query Layer
 
 ## Database Portabiliteit
 
-Alle raw SQL queries gebruiken `App\Support\DbDialect` voor database-agnostische expressies. De applicatie draait op SQLite (lokaal) en MySQL/PostgreSQL (staging/productie).
+Alle raw SQL queries gebruiken `App\Support\DbDialect` voor database-agnostische expressies. Lokaal en staging draaien beide PostgreSQL 17+. DbDialect wordt op termijn uitgefaseerd nu SQLite niet meer als lokale database gebruikt wordt.
 
 | Helper | SQLite | MySQL | PostgreSQL |
 |--------|--------|-------|------------|
@@ -290,8 +290,10 @@ app/Services/
 ├── Analysis/      DashboardService (delegator), *AnalyticsService (4x),
 │                  DtcSalesQueryService, OdooB2bSalesService, Channel*, Customer*,
 │                  Product*, PurchaseLadder*, RepeatProbability*, SegmentMovement*
+├── Report/        ProductPortfolioReportService
 ├── Forecast/
-│   ├── Demand/    SalesBaselineService, DemandForecastService, CohortProjectionService,
+│   ├── Demand/    SalesBaselineService, DemandForecastService, ForecastValidationService,
+│   │              QuarterlyAovCalculator, CohortProjectionService,
 │   │              CategorySeasonalCalculator, SeasonalIndexCalculator, DemandEventService,
 │   │              RegionalForecastAggregator, RegionalCostService
 │   ├── Supply/    ComponentNettingService, ProductionTimelineService, BomExplosionService,
