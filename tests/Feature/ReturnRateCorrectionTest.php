@@ -5,6 +5,7 @@ use App\Models\Product;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
+use App\Services\Forecast\Demand\QuarterlyAovCalculator;
 use App\Services\Forecast\Demand\SalesBaselineService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
@@ -151,7 +152,7 @@ it('calculates gross vs net AOV per quarter', function () {
         ]);
     }
 
-    $service = app(SalesBaselineService::class);
+    $service = app(QuarterlyAovCalculator::class);
     $result = $service->grossAovByQuarter(2026);
 
     expect($result)->toHaveKey('Q2');

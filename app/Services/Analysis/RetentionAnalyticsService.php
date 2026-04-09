@@ -16,7 +16,7 @@ class RetentionAnalyticsService
      */
     public function orderTypeSplit(int $months = 12): array
     {
-        return Cache::remember("dashboard:order_type_split:{$months}", 3600, function () use ($months) {
+        return Cache::remember("dashboard:order_type_split:{$months}", config('dashboard.cache_ttl'), function () use ($months) {
             $since = CarbonImmutable::now()->subMonths($months)->startOfMonth();
 
             $orders = ShopifyOrder::query()
@@ -48,7 +48,7 @@ class RetentionAnalyticsService
      */
     public function cohortRetention(int $cohortMonths = 12): array
     {
-        return Cache::remember("dashboard:cohort_retention:{$cohortMonths}", 3600, function () use ($cohortMonths) {
+        return Cache::remember("dashboard:cohort_retention:{$cohortMonths}", config('dashboard.cache_ttl'), function () use ($cohortMonths) {
             $since = CarbonImmutable::now()->subMonths($cohortMonths)->startOfMonth();
 
             $customers = ShopifyCustomer::query()
@@ -112,7 +112,7 @@ class RetentionAnalyticsService
      */
     public function timeToSecondOrder(): array
     {
-        return Cache::remember('dashboard:time_to_second', 3600, function () {
+        return Cache::remember('dashboard:time_to_second', config('dashboard.cache_ttl'), function () {
             $daysDiff = DbDialect::daysDiffExpr('ordered_at', 'lag(ordered_at) OVER (PARTITION BY customer_id ORDER BY ordered_at)');
 
             $gaps = DB::select("
@@ -170,7 +170,7 @@ class RetentionAnalyticsService
      */
     public function retentionByRegion(int $limit = 15): array
     {
-        return Cache::remember("dashboard:retention_region:{$limit}", 3600, function () use ($limit) {
+        return Cache::remember("dashboard:retention_region:{$limit}", config('dashboard.cache_ttl'), function () use ($limit) {
             return ShopifyCustomer::query()
                 ->whereNotNull('country_code')
                 ->selectRaw('country_code')

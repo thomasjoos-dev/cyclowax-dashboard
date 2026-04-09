@@ -12,7 +12,7 @@ class ProductAnalyticsService
      */
     public function topProductsFirstOrder(int $limit = 10): array
     {
-        return Cache::remember("dashboard:top_products_first:{$limit}", 3600, function () use ($limit) {
+        return Cache::remember("dashboard:top_products_first:{$limit}", config('dashboard.cache_ttl'), function () use ($limit) {
             return $this->topProducts(true, $limit);
         });
     }
@@ -22,7 +22,7 @@ class ProductAnalyticsService
      */
     public function topProductsReturning(int $limit = 10): array
     {
-        return Cache::remember("dashboard:top_products_returning:{$limit}", 3600, function () use ($limit) {
+        return Cache::remember("dashboard:top_products_returning:{$limit}", config('dashboard.cache_ttl'), function () use ($limit) {
             return $this->topProducts(false, $limit);
         });
     }

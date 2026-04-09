@@ -2,7 +2,7 @@
 
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyOrder;
-use App\Services\Forecast\Demand\SalesBaselineService;
+use App\Services\Forecast\Demand\QuarterlyAovCalculator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -22,7 +22,7 @@ it('returns both actual and normalized AOV per quarter', function () {
         ]);
     }
 
-    $service = app(SalesBaselineService::class);
+    $service = app(QuarterlyAovCalculator::class);
     $result = $service->repeatAovByQuarter(2025);
 
     // Q2 should have data
@@ -49,7 +49,7 @@ it('returns equal actual and normalized when no discounts exist', function () {
         ]);
     }
 
-    $service = app(SalesBaselineService::class);
+    $service = app(QuarterlyAovCalculator::class);
     $result = $service->repeatAovByQuarter(2025);
 
     expect($result['Q3']['actual'])->toBe($result['Q3']['normalized']);
@@ -76,7 +76,7 @@ it('calculates discount rate correctly', function () {
         ]);
     }
 
-    $service = app(SalesBaselineService::class);
+    $service = app(QuarterlyAovCalculator::class);
     $result = $service->discountRate();
 
     expect($result['total_orders'])->toBe(10)

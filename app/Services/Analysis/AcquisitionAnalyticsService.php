@@ -14,7 +14,7 @@ class AcquisitionAnalyticsService
      */
     public function acquisitionTrend(int $months = 12): array
     {
-        return Cache::remember("dashboard:acquisition_trend:{$months}", 3600, function () use ($months) {
+        return Cache::remember("dashboard:acquisition_trend:{$months}", config('dashboard.cache_ttl'), function () use ($months) {
             $since = CarbonImmutable::now()->subMonths($months)->startOfMonth();
 
             return ShopifyCustomer::query()
@@ -32,7 +32,7 @@ class AcquisitionAnalyticsService
      */
     public function acquisitionByRegion(int $limit = 10): array
     {
-        return Cache::remember("dashboard:acquisition_region:{$limit}", 3600, function () use ($limit) {
+        return Cache::remember("dashboard:acquisition_region:{$limit}", config('dashboard.cache_ttl'), function () use ($limit) {
             $total = ShopifyCustomer::query()->whereNotNull('country_code')->count();
 
             if ($total === 0) {
@@ -60,7 +60,7 @@ class AcquisitionAnalyticsService
      */
     public function regionGrowthRates(): array
     {
-        return Cache::remember('dashboard:region_growth', 3600, function () {
+        return Cache::remember('dashboard:region_growth', config('dashboard.cache_ttl'), function () {
             $since = CarbonImmutable::now()->subMonths(6)->startOfMonth();
 
             $data = ShopifyCustomer::query()

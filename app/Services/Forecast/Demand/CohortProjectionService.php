@@ -20,6 +20,7 @@ class CohortProjectionService
     public function __construct(
         private DashboardService $dashboard,
         private SalesBaselineService $forecast,
+        private QuarterlyAovCalculator $aovCalculator,
         private ScenarioService $scenarioService,
     ) {}
 
@@ -264,7 +265,7 @@ class CohortProjectionService
         $firstOrderAov = $totalNewCustomers > 0 ? round($totalAcqRev / $totalNewCustomers, 2) : 0;
 
         // Get age-aware repeat AOV
-        $aovByOrder = $this->forecast->repeatAovByOrderNumber($region);
+        $aovByOrder = $this->aovCalculator->repeatAovByOrderNumber($region);
 
         // Sum incremental retention × effective AOV over the projection horizon
         $predictedRepeatValue = 0.0;
@@ -307,7 +308,7 @@ class CohortProjectionService
         $retentionMonths = $curve['months'];
 
         // Get repeat AOV from rolling quarterly actuals (seasonal-aware, discount-adjusted)
-        $quarterlyAov = $this->forecast->repeatAovByQuarter($year);
+        $quarterlyAov = $this->aovCalculator->repeatAovByQuarter($year);
         $avgRepeatAov = collect($quarterlyAov)->map(fn ($v) => $v['normalized'] ?? 0)->filter(fn ($v) => $v > 0)->avg() ?: 0;
 
         // Final fallback: calculate from monthly actuals if dynamic AOV unavailable

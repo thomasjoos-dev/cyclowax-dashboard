@@ -15,7 +15,7 @@ class RevenueAnalyticsService
      */
     public function kpiMetrics(string $period = 'mtd'): array
     {
-        return Cache::remember("dashboard:kpi:{$period}", 3600, function () use ($period) {
+        return Cache::remember("dashboard:kpi:{$period}", config('dashboard.cache_ttl'), function () use ($period) {
             [$current, $previous] = $this->periodRanges($period);
 
             $currentRevenue = $this->revenueInRange($current[0], $current[1]);
@@ -46,7 +46,7 @@ class RevenueAnalyticsService
      */
     public function revenueSplit(int $months = 12): array
     {
-        return Cache::remember("dashboard:revenue_split:{$months}", 3600, function () use ($months) {
+        return Cache::remember("dashboard:revenue_split:{$months}", config('dashboard.cache_ttl'), function () use ($months) {
             $since = CarbonImmutable::now()->subMonths($months)->startOfMonth();
 
             return ShopifyOrder::query()
@@ -72,7 +72,7 @@ class RevenueAnalyticsService
      */
     public function aovTrend(int $months = 12): array
     {
-        return Cache::remember("dashboard:aov_trend:{$months}", 3600, function () use ($months) {
+        return Cache::remember("dashboard:aov_trend:{$months}", config('dashboard.cache_ttl'), function () use ($months) {
             $since = CarbonImmutable::now()->subMonths($months)->startOfMonth();
 
             $data = ShopifyOrder::query()

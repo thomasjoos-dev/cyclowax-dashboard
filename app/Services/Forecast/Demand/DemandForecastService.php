@@ -6,8 +6,6 @@ use App\Enums\ForecastGroup;
 use App\Enums\ForecastRegion;
 use App\Enums\ProductCategory;
 use App\Exceptions\InsufficientBaselineException;
-use App\Exceptions\InvalidProductMixException;
-use App\Models\DemandEvent;
 use App\Models\Scenario;
 use App\Models\ScenarioProductMix;
 use App\Services\Analysis\CustomerValueService;
@@ -18,10 +16,12 @@ class DemandForecastService
 {
     public function __construct(
         private SalesBaselineService $forecastService,
+        private QuarterlyAovCalculator $aovCalculator,
         private CategorySeasonalCalculator $seasonalCalculator,
         private DemandEventService $demandEventService,
         private CohortProjectionService $cohortProjectionService,
         private CustomerValueService $customerValueService,
+        private ForecastValidationService $validationService,
     ) {}
 
     /**
@@ -36,11 +36,11 @@ class DemandForecastService
         $mixes = $this->indexMixesByCategory($scenario, $region);
 
         if (count($mixes) > 0) {
-            $this->validateProductMixes(collect($mixes));
+            $this->validationService->validateProductMixes(collect($mixes));
         }
 
         $baselineByMonth = $this->getBaselineByMonth($year, count($mixes) > 0, $region);
-        $this->detectBaselineAnomalies($baselineByMonth, $year, $region);
+        $this->validationService->detectBaselineAnomalies($baselineByMonth, $year, $region);
         $assumptions = $this->indexAssumptionsByQuarter($scenario, $region);
 
         $plannedEvents = $this->demandEventService->plannedForYear($year);
@@ -54,15 +54,15 @@ class DemandForecastService
         $curveAdjustment = $this->resolveRetentionAdjustment($scenario, $assumptions);
 
         // Dynamic AOV: quarterly repeat AOV from rolling actuals, with scenario assumption as fallback
-        $dynamicAov = $this->forecastService->repeatAovByQuarter($year, $region);
-        $aovByOrderNumber = $this->forecastService->repeatAovByOrderNumber($region);
+        $dynamicAov = $this->aovCalculator->repeatAovByQuarter($year, $region);
+        $aovByOrderNumber = $this->aovCalculator->repeatAovByOrderNumber($region);
 
         // Dynamic acquisition AOV: quarterly first-order AOV from rolling actuals
-        $dynamicAcqAov = $this->forecastService->acqAovByQuarter($year, $region);
+        $dynamicAcqAov = $this->aovCalculator->acqAovByQuarter($year, $region);
 
         // Validate AOV consistency with product mix
-        $this->validateAovConsistency($dynamicAov, $assumptions, $mixes, $region);
-        $this->validateAcqAovConsistency($dynamicAcqAov, $mixes, $region);
+        $this->validationService->validateAovConsistency($dynamicAov, $assumptions, $mixes, $region);
+        $this->validationService->validateAcqAovConsistency($dynamicAcqAov, $mixes, $region);
 
         $forecast = [];
         $cumulativeCustomers = 0;
@@ -173,7 +173,7 @@ class DemandForecastService
             $forecast[$month] = $monthForecast;
         }
 
-        $this->validateEventUplift($plannedEvents, $forecast, $mixes, $region);
+        $this->validationService->validateEventUplift($plannedEvents, $forecast, $mixes, $region);
 
         return $forecast;
     }
@@ -416,182 +416,12 @@ class DemandForecastService
     }
 
     /**
-     * Detect anomalies in Q1 baseline data by comparing current Q1 months
-     * against the previous year's same months. Logs warnings for months
-     * that deviate more than the configured threshold (default 30%).
-     *
-     * @param  array<string, array{acq_rev: float, rep_rev: float, new_customers: int}>  $baselineByMonth
-     * @return array<int, array{month: string, metric: string, current: float, previous: float, deviation_pct: float}>
-     */
-    private function detectBaselineAnomalies(array $baselineByMonth, int $year, ?ForecastRegion $region = null): array
-    {
-        $threshold = config('forecast.baseline_anomaly_threshold', 0.30);
-        $warnings = [];
-
-        for ($m = 1; $m <= 3; $m++) {
-            $currKey = sprintf('%d-%02d', $year, $m);
-            $prevKey = sprintf('%d-%02d', $year - 1, $m);
-
-            $current = $baselineByMonth[$currKey] ?? null;
-            if ($current === null) {
-                continue;
-            }
-
-            // We need previous year data for comparison — fetch if not in baseline
-            $prevActuals = $this->forecastService->monthlyActuals(
-                sprintf('%d-%02d-01', $year - 1, $m),
-                sprintf('%d-%02d-01', $m < 12 ? $year - 1 : $year, $m < 12 ? $m + 1 : 1),
-                $region,
-            );
-            $previous = $prevActuals[0] ?? null;
-
-            if ($previous === null) {
-                continue;
-            }
-
-            foreach (['acq_rev', 'rep_rev', 'new_customers'] as $metric) {
-                $prevValue = (float) ($previous[$metric] ?? 0);
-                $currValue = (float) ($current[$metric] ?? 0);
-
-                if ($prevValue <= 0) {
-                    continue;
-                }
-
-                $deviation = abs($currValue - $prevValue) / $prevValue;
-                if ($deviation > $threshold) {
-                    $warnings[] = [
-                        'month' => $currKey,
-                        'metric' => $metric,
-                        'current' => $currValue,
-                        'previous' => $prevValue,
-                        'deviation_pct' => round($deviation * 100, 1),
-                    ];
-
-                    Log::warning('Q1 baseline anomaly detected', [
-                        'month' => $currKey,
-                        'metric' => $metric,
-                        'region' => $region?->value ?? 'global',
-                        'current' => $currValue,
-                        'previous' => $prevValue,
-                        'deviation_pct' => round($deviation * 100, 1),
-                    ]);
-                }
-            }
-        }
-
-        return $warnings;
-    }
-
-    /**
-     * Validate that event uplift values are incremental (not total volume).
-     * Logs a warning if event uplift exceeds 50% of the seasonal baseline revenue
-     * for that category/month — which suggests the uplift may include organic volume.
-     *
-     * @param  Collection<int, DemandEvent>  $events
-     * @param  array<int, array<string, array{revenue: float}>>  $forecast
-     * @param  array<string, ScenarioProductMix>  $mixes
-     */
-    private function validateEventUplift(Collection $events, array $forecast, array $mixes, ?ForecastRegion $region = null): void
-    {
-        foreach ($events as $event) {
-            foreach ($event->categories as $eventCategory) {
-                if (! $eventCategory->expected_uplift_units || $eventCategory->expected_uplift_units <= 0) {
-                    continue;
-                }
-
-                $catValue = $eventCategory->product_category->value;
-                $mix = $mixes[$catValue] ?? null;
-                if ($mix === null) {
-                    continue;
-                }
-
-                $avgPrice = (float) $mix->avg_unit_price;
-                if ($avgPrice <= 0) {
-                    continue;
-                }
-
-                $eventMonths = max(1, $event->start_date->diffInMonths($event->end_date) + 1);
-                $monthlyUpliftRevenue = ($eventCategory->expected_uplift_units / $eventMonths) * $avgPrice;
-
-                // Check against the first month of the event
-                $eventMonth = (int) $event->start_date->format('m');
-                $monthForecast = $forecast[$eventMonth][$catValue] ?? null;
-
-                if ($monthForecast === null) {
-                    continue;
-                }
-
-                // Seasonal baseline = total revenue minus event boost
-                $seasonalBaseline = $monthForecast['revenue'] - ($monthForecast['event_boost'] ?? 0);
-                if ($seasonalBaseline <= 0) {
-                    continue;
-                }
-
-                $upliftRatio = $monthlyUpliftRevenue / $seasonalBaseline;
-
-                if ($upliftRatio > 0.50) {
-                    Log::warning('Event uplift may include organic volume', [
-                        'event' => $event->name,
-                        'category' => $catValue,
-                        'region' => $region?->value ?? 'global',
-                        'monthly_uplift_revenue' => round($monthlyUpliftRevenue, 2),
-                        'seasonal_baseline' => round($seasonalBaseline, 2),
-                        'uplift_ratio_pct' => round($upliftRatio * 100, 1),
-                        'is_incremental' => $eventCategory->is_incremental,
-                    ]);
-                }
-            }
-        }
-    }
-
-    /**
-     * Validate that acquisition AOV is consistent with the product mix.
-     * Compares dynamic acq AOV against implied AOV from Σ(acq_share × avg_unit_price).
-     *
-     * @param  array<string, array{actual: float, normalized: float}>  $dynamicAcqAov
-     * @param  array<string, ScenarioProductMix>  $mixes
-     */
-    private function validateAcqAovConsistency(array $dynamicAcqAov, array $mixes, ?ForecastRegion $region = null): void
-    {
-        if (empty($mixes)) {
-            return;
-        }
-
-        $impliedAov = 0.0;
-        foreach ($mixes as $mix) {
-            $impliedAov += (float) $mix->acq_share * (float) $mix->avg_unit_price;
-        }
-
-        foreach (['Q2', 'Q3', 'Q4'] as $quarter) {
-            $quarterAov = $dynamicAcqAov[$quarter] ?? null;
-            $actualAov = $quarterAov['normalized'] ?? null;
-            if ($actualAov === null || $actualAov <= 0 || $impliedAov <= 0) {
-                continue;
-            }
-
-            $delta = abs($actualAov - $impliedAov) / $actualAov;
-            if ($delta > 0.25) {
-                Log::warning('Acquisition AOV consistency warning: acq_aov and product mix diverge', [
-                    'quarter' => $quarter,
-                    'region' => $region?->value ?? 'global',
-                    'acq_aov' => $actualAov,
-                    'implied_aov_from_mix' => round($impliedAov, 2),
-                    'delta_pct' => round($delta * 100, 1),
-                ]);
-            }
-        }
-    }
-
-    /**
      * Validate that forecast-implied LTV is consistent with historical and predicted LTV.
-     * Compares three LTV signals: forecast-implied, historical, and curve-predicted.
-     * Logs a warning if forecast-implied diverges >25% from historical.
      *
      * @return array{forecast_implied_ltv: float, historical_avg_ltv: float, predicted_ltv: float, delta_pct: float, warning: string|null}
      */
     public function validateLtvConsistency(Scenario $scenario, int $year, ?ForecastRegion $region = null): array
     {
-        // Forecast-implied LTV: total revenue / total new customers
         $total = $this->totalForecast($scenario, $year, $region);
         $yearRevenue = $total['year_total']['revenue'];
 
@@ -620,125 +450,21 @@ class DemandForecastService
             }
         }
 
-        $forecastImpliedLtv = $totalNewCustomers > 0 ? round($yearRevenue / $totalNewCustomers, 2) : 0;
-
-        // Historical LTV: average across recent cohorts
+        // Historical + predicted LTV
         $historicalCohorts = $this->customerValueService->ltvByCohort(($year - 2).'-01-01');
         $historicalAvgLtv = ! empty($historicalCohorts)
             ? round(collect($historicalCohorts)->avg('avg_ltv'), 2)
             : 0;
 
-        // Predicted LTV from retention curve
         $predictedLtv = $this->cohortProjectionService->predictedLtv($region);
-        $predictedLtvValue = $predictedLtv['predicted_ltv_12m'];
 
-        // Calculate divergence
-        $deltaPct = $historicalAvgLtv > 0
-            ? round(abs($forecastImpliedLtv - $historicalAvgLtv) / $historicalAvgLtv * 100, 1)
-            : 0;
-
-        $warning = null;
-        if ($historicalAvgLtv > 0 && $deltaPct > 25) {
-            $direction = $forecastImpliedLtv > $historicalAvgLtv ? 'higher' : 'lower';
-            $warning = "Forecast-implied LTV is {$deltaPct}% {$direction} than historical average";
-
-            Log::warning('LTV consistency warning: forecast-implied LTV diverges from historical', [
-                'region' => $region?->value ?? 'global',
-                'forecast_implied_ltv' => $forecastImpliedLtv,
-                'historical_avg_ltv' => $historicalAvgLtv,
-                'predicted_ltv' => $predictedLtvValue,
-                'delta_pct' => $deltaPct,
-            ]);
-        }
-
-        return [
-            'forecast_implied_ltv' => $forecastImpliedLtv,
-            'historical_avg_ltv' => $historicalAvgLtv,
-            'predicted_ltv' => $predictedLtvValue,
-            'delta_pct' => $deltaPct,
-            'warning' => $warning,
-        ];
-    }
-
-    /**
-     * Validate that repeat AOV is consistent with the product mix.
-     * Logs a warning if the implied AOV from product shares × unit prices diverges
-     * more than 25% from the actual repeat AOV — indicating the mix and AOV are out of sync.
-     *
-     * @param  array<string, array{actual: float, normalized: float}>  $dynamicAov  Quarterly dynamic AOV
-     * @param  array<string, array{repeat_aov: float}>  $assumptions  Scenario assumptions by quarter
-     * @param  array<string, ScenarioProductMix>  $mixes  Product mixes by category
-     */
-    private function validateAovConsistency(array $dynamicAov, array $assumptions, array $mixes, ?ForecastRegion $region = null): void
-    {
-        if (empty($mixes)) {
-            return;
-        }
-
-        // Calculate implied AOV from product mix: Σ(repeat_share × avg_unit_price)
-        $impliedAov = 0.0;
-        foreach ($mixes as $mix) {
-            $impliedAov += (float) $mix->repeat_share * (float) $mix->avg_unit_price;
-        }
-
-        // Compare against each quarter's normalized AOV
-        foreach (['Q2', 'Q3', 'Q4'] as $quarter) {
-            $quarterAov = $dynamicAov[$quarter] ?? null;
-            $actualAov = $quarterAov['normalized'] ?? ($assumptions[$quarter]['repeat_aov'] ?? null);
-            if ($actualAov === null || $actualAov <= 0 || $impliedAov <= 0) {
-                continue;
-            }
-
-            $delta = abs($actualAov - $impliedAov) / $actualAov;
-            if ($delta > 0.25) {
-                Log::warning('AOV consistency warning: repeat_aov and product mix diverge', [
-                    'quarter' => $quarter,
-                    'region' => $region?->value ?? 'global',
-                    'repeat_aov' => $actualAov,
-                    'implied_aov_from_mix' => round($impliedAov, 2),
-                    'delta_pct' => round($delta * 100, 1),
-                ]);
-            }
-        }
-    }
-
-    /**
-     * Validate that product mix shares are within acceptable ranges.
-     *
-     * @param  Collection<string, ScenarioProductMix>  $mixes
-     *
-     * @throws InvalidProductMixException
-     */
-    private function validateProductMixes(Collection $mixes): void
-    {
-        $violations = [];
-
-        foreach ($mixes as $categoryValue => $mix) {
-            $acq = (float) $mix->acq_share;
-            $rep = (float) $mix->repeat_share;
-
-            if ($acq < 0 || $acq > 1) {
-                $violations["{$categoryValue}.acq_share"] = "value {$acq} not in [0, 1]";
-            }
-            if ($rep < 0 || $rep > 1) {
-                $violations["{$categoryValue}.repeat_share"] = "value {$rep} not in [0, 1]";
-            }
-        }
-
-        if (count($violations) > 0) {
-            throw InvalidProductMixException::sharesOutOfRange($violations);
-        }
-
-        $acqSum = $mixes->sum(fn (ScenarioProductMix $m) => (float) $m->acq_share);
-        $repSum = $mixes->sum(fn (ScenarioProductMix $m) => (float) $m->repeat_share);
-
-        if ($acqSum < 0.95 || $acqSum > 1.05) {
-            throw InvalidProductMixException::sumOutOfTolerance('acq_share', $acqSum);
-        }
-
-        if ($repSum < 0.95 || $repSum > 1.05) {
-            throw InvalidProductMixException::sumOutOfTolerance('repeat_share', $repSum);
-        }
+        return $this->validationService->validateLtvConsistency(
+            $yearRevenue,
+            $totalNewCustomers,
+            $historicalAvgLtv,
+            $predictedLtv['predicted_ltv_12m'],
+            $region,
+        );
     }
 
     /**

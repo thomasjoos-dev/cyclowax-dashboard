@@ -312,7 +312,7 @@ class ShopifyClient
 
         // When available points drop below 20% of max, slow down proactively
         $maxAvailable = (float) ($throttleStatus['maximumAvailable'] ?? 1000);
-        $threshold = $maxAvailable * 0.2;
+        $threshold = $maxAvailable * config('shopify.throttle_threshold', 0.2);
 
         if ($currentlyAvailable < $threshold && $restoreRate > 0) {
             $sleepSeconds = ($threshold - $currentlyAvailable) / $restoreRate;
