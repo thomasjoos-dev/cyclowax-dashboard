@@ -84,6 +84,86 @@ Nederlandse afkortingen in capitals: `JAN`, `FEB`, `MRT`, `APR`, `MEI`, `JUN`, `
 - Chart grids: `lg:grid-cols-2`
 - Tabellen: `overflow-x-auto` wrapper
 
+## UI Componenten (shadcn/ui)
+
+Beschikbare componenten in `resources/js/components/ui/`:
+
+### Data display
+- `data-table` — sorteerbare, pagineerbare tabel (tanstack/react-table)
+- `table` — basis HTML tabel wrapper
+- `badge` — status labels en tags
+- `card` — content container
+- `skeleton` — loading placeholder
+
+### Forms & Input
+- `input` — tekst input
+- `select` — dropdown select
+- `checkbox` — checkbox
+- `label` — form label
+- `calendar` — datumkiezer kalender
+- `date-picker` — datumkiezer met popover
+- `command` — search/combobox (cmdk)
+
+### Navigation & Layout
+- `tabs` — tab navigatie
+- `sidebar` — collapsible sidebar
+- `breadcrumb` — breadcrumb navigatie
+- `navigation-menu` — nav menu
+- `collapsible` — inklapbare sectie
+- `separator` — visuele scheiding
+
+### Feedback & Overlay
+- `dialog` — modale dialoog
+- `sheet` — slide-over panel
+- `popover` — floating content
+- `tooltip` — hover tooltip
+- `dropdown-menu` — context menu
+- `sonner` — toast notificaties
+- `alert` — inline waarschuwing
+- `spinner` — loading indicator
+
+## Error handling
+
+### Error boundary
+Globale `ErrorBoundary` in `app.tsx` vangt React render crashes op. Toont een reload-pagina met foutmelding.
+
+### Error pages
+- `pages/errors/404.tsx` — pagina niet gevonden
+- `pages/errors/500.tsx` — server fout
+
+### API errors
+API responses volgen een consistente error envelope:
+```json
+{
+    "error": {
+        "message": "Beschrijving",
+        "code": "validation",
+        "fields": { "field": ["foutmelding"] }
+    }
+}
+```
+
+TypeScript type: `ApiError` in `types/api.ts`.
+
+### Toast notificaties
+Gebruik `sonner` voor gebruikersfeedback:
+```tsx
+import { toast } from 'sonner';
+toast.success('Opgeslagen');
+toast.error('Er ging iets mis');
+```
+
+## TypeScript types
+
+API model types in `resources/js/types/api.ts`:
+- `Customer`, `Order`, `LineItem`, `Product` — Shopify models
+- `Scenario`, `ScenarioAssumption`, `ScenarioProductMix` — Forecast models
+- `ForecastData`, `ForecastMonth` — Forecast output
+- `PurchaseCalendarRun`, `PurchaseCalendarEvent` — Supply planning
+- `SyncStep` — Sync pipeline status
+- `ApiError` — Error envelope
+- `PaginatedResponse<T>` — Gepagineerde API response
+
 ## Iconen
 - Library: Lucide React
 - Sidebar logo: Custom SVG wiel-icoon (cirkel met spaken)
