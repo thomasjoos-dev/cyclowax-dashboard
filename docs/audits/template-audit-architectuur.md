@@ -1,4 +1,9 @@
-# Audit Prompt — Codebase Architectuur & Consistentie
+# Template — Audit Codebase Architectuur & Consistentie
+
+> **Hoe deze template gebruiken**
+> Kopieer dit bestand bij elke nieuwe audit naar een nieuw rapport: `docs/audits/audit-rapport-YYYY-MM.md`. Vul eerst de **Snapshot** sectie in met actuele cijfers (zie instructies daar). Werk daarna de dimensies één voor één af. De template is bewust zonder hardgecodeerde aantallen of specifieke servicenamen — die veranderen tussen audits door.
+
+---
 
 ## Doel
 
@@ -14,65 +19,103 @@ Voer een grondige architectuur-audit uit van de Cyclowax Dashboard codebase. Eva
 
 Een intern data analytics & forecasting dashboard voor het fietsverzorgingsmerk Cyclowax. Het systeem:
 
-- **Synct data** uit drie externe bronnen (Shopify, Klaviyo, Odoo ERP) naar een lokale database
+- **Synct data** uit externe bronnen (Shopify, Klaviyo, Odoo ERP — en in de toekomst de Cyclowax App) naar een lokale database
 - **Berekent scores en segmentaties** (RFM, lifecycle stages, follower engagement, product classificatie)
 - **Genereert demand forecasts** en een purchase calendar (S&OP pipeline)
 - **Biedt een REST API** voor interne apps
-- **Toont een dashboard** met KPI's en analytics (frontend is prototype, moet nog gebouwd worden)
+- **Toont een dashboard** met KPI's en analytics voor het Cyclowax team
 
-### Stack
+### Stack (verifieer voor je begint)
 
-- **Backend:** Laravel 13, PHP 8.4, Sanctum (auth), Fortify (2FA)
-- **Frontend:** React 19, Inertia.js v2, TypeScript, Tailwind CSS v4, Wayfinder (route generation)
-- **Database:** SQLite lokaal (via Laravel Herd), PostgreSQL op staging (Laravel Cloud)
-- **Testing:** Pest v4, 65 tests (64 Feature, 1 Unit)
+Lees `composer.json` en `package.json` om de actuele versies vast te leggen. Te documenteren:
 
-### Schaal
+- **Backend:** Laravel versie, PHP versie, Sanctum, Fortify
+- **Frontend:** React versie, Inertia.js versie, TypeScript, Tailwind versie, Wayfinder
+- **Database:** Lokaal én staging (vermeld beide platformen)
+- **Testing:** Pest versie, totaal aantal tests (Feature/Unit/Browser uitsplitsen)
 
-| Onderdeel | Aantal |
-|-----------|--------|
-| Models | 28 |
-| Services | 61 (in 7 subdomeinen) |
-| Artisan Commands | 41 |
-| Enums | 13 |
-| Migrations | 72 |
-| API Controllers | 4 |
-| Form Requests | 8 |
-| API Resources | 4 |
-| React Pages | 15 (7 auth, 1 dashboard, 3 docs, 3 settings, 1 welcome) |
-| React Components | 54 |
-| Custom Hooks | 7 |
+---
 
-### Service-domeinen
+## Snapshot (vul in bij start van de audit)
+
+Gebruik onderstaande commands om de actuele cijfers op te halen voor je begint. Zonder deze snapshot weet je niet wat er sinds de vorige audit veranderd is.
+
+```bash
+# Models
+ls app/Models/*.php | wc -l
+
+# Services per domein
+find app/Services -name "*.php" -type f | wc -l
+ls app/Services/
+
+# Artisan commands
+php artisan list --raw | wc -l
+ls app/Console/Commands/*.php | wc -l
+
+# Enums
+ls app/Enums/*.php | wc -l
+
+# Migraties
+ls database/migrations/*.php | wc -l
+
+# API
+ls app/Http/Controllers/Api/**/*.php
+ls app/Http/Requests/**/*.php | wc -l
+ls app/Http/Resources/**/*.php | wc -l
+
+# Frontend
+find resources/js/pages -name "*.tsx" | wc -l
+find resources/js/components -name "*.tsx" | wc -l
+find resources/js/hooks -name "*.ts" -o -name "*.tsx" | wc -l
+
+# Tests
+php artisan test --list-tests 2>/dev/null | tail -5
+```
+
+Vul daarna deze tabel in:
+
+| Onderdeel | Aantal | Δ vs vorige audit |
+|-----------|--------|-------------------|
+| Models | | |
+| Services (totaal) | | |
+| Service-domeinen | | |
+| Artisan Commands | | |
+| Enums | | |
+| Migrations | | |
+| API Controllers | | |
+| Form Requests | | |
+| API Resources | | |
+| React Pages | | |
+| React Components | | |
+| Custom Hooks | | |
+| Tests (Feature) | | |
+| Tests (Unit) | | |
+| Tests (Browser) | | |
+
+### Service-domeinen snapshot
 
 ```
 app/Services/
-├── Analysis/      (14 services — dashboards, cohort, retention, revenue, portfolio)
-├── Api/           (3 services — Shopify, Klaviyo, Odoo API clients)
-├── Forecast/
-│   ├── Demand/    (8 services — baseline, seasonal, regional, events)
-│   ├── Supply/    (8 services — BOM, netting, production, purchase calendar)
-│   └── Tracking/  (3 services — actuals, goals, scenarios)
-├── Scoring/       (7 services — RFM, margins, segments, followers)
-├── Support/       (3 services — PDF, postal, shipping)
-└── Sync/          (14 services — Shopify/Klaviyo/Odoo syncers + imports)
+├── [vul in]/   ([X] services — [korte beschrijving])
+├── ...
 ```
 
-### Huidige API (v1, Sanctum-protected)
+### Huidige API endpoints
+
+Run `php artisan route:list --path=api` en plak een samenvatting:
 
 ```
-GET  /api/v1/dashboard         — KPI aggregatie (invokable controller)
-GET  /api/v1/orders            — Lijst + filters
-GET  /api/v1/orders/{order}    — Detail
-GET  /api/v1/customers         — Lijst + filters
-GET  /api/v1/customers/{customer} — Detail
-GET  /api/v1/products          — Lijst + filters
-GET  /api/v1/products/{product}   — Detail
+[methods]  /api/v1/[resource]   — [beschrijving]
+...
 ```
 
 ### Scheduler
 
-Draait via `console.php` met env-flag `SYNC_SCHEDULE_ENABLED`. Gebruikt `env()` direct (niet via config).
+Documenteer hoe de scheduler werkt (welk bestand, welke commands, welke flags). Verifieer of `env()` direct gebruikt wordt of via `config()`.
+
+### Vorige audit
+
+Verwijs naar het vorige rapport (`docs/audits/audit-rapport-YYYY-MM.md`) en somm de **top 5 issues** op die toen openstonden. Markeer per issue: **opgelost / nog open / nieuw probleem ontstaan**.
 
 ---
 
@@ -84,6 +127,8 @@ Evalueer elke dimensie hieronder. Geef per dimensie:
 2. **Bevindingen:** Concrete voorbeelden met bestandsnaam en regelnummer
 3. **Impact:** Wat is het gevolg als dit niet opgelost wordt?
 4. **Prioriteit:** Hoog / Medium / Laag (voor de refactoring backlog)
+
+**Wees specifiek.** "Sommige services missen return types" is nutteloos. "`OrderMarginCalculator:45` mist return type op `calculate()`" is bruikbaar.
 
 ---
 
@@ -112,7 +157,7 @@ Evalueer of elke architectuurlaag alleen doet wat het hoort te doen.
 
 ### D2. Service-consistentie
 
-Alle 61 services moeten dezelfde patronen volgen.
+Alle services moeten dezelfde patronen volgen.
 
 **Check specifiek:**
 
@@ -120,7 +165,7 @@ Alle 61 services moeten dezelfde patronen volgen.
 - [ ] **Return types** — Hebben alle publieke methoden expliciete return types?
 - [ ] **Method signatures** — Consistent gebruik van type hints op parameters?
 - [ ] **Naamgeving** — Volgen services een consistent naamgevingspatroon? (bijv. `XxxService`, `XxxSyncer`, `XxxCalculator`)
-- [ ] **Lengte** — Zijn er services die te groot zijn geworden (>300 regels)? Moeten die gesplitst worden?
+- [ ] **Lengte** — Zijn er services die te groot zijn geworden (>300 regels)? Lijst ze op met regelaantal en suggestie voor splitsing.
 - [ ] **Static methods/properties** — Wordt er onnodig static state gebruikt?
 - [ ] **PHPDoc** — Zijn complexe methoden gedocumenteerd met array shapes en type info?
 
@@ -130,7 +175,7 @@ Alle 61 services moeten dezelfde patronen volgen.
 
 ### D3. Command-patronen
 
-Met 41 commands is dit een command-heavy codebase. Evalueer de consistentie.
+Evalueer de consistentie van alle Artisan commands.
 
 **Check specifiek:**
 
@@ -143,14 +188,14 @@ Met 41 commands is dit een command-heavy codebase. Evalueer de consistentie.
 
 **Let op:**
 
-- De `sync:all` command orkestreert 13+ sync stappen — evalueer of die orchestratie goed is opgezet
-- Commands die rapporten genereren (PDF, forecast) — zit de logica in de service of het command?
+- De `sync:all` command orkestreert meerdere sync stappen — evalueer of die orchestratie goed is opgezet
+- Commands die rapporten genereren (PDF, forecast, exports) — zit de logica in de service of het command?
 
 ---
 
 ### D4. Model-hygiëne
 
-28 models met verschillende oorsprong (Shopify, Klaviyo, Odoo, intern).
+Evalueer de consistentie van alle models (interne én externe data sources).
 
 **Check specifiek:**
 
@@ -159,41 +204,40 @@ Met 41 commands is dit een command-heavy codebase. Evalueer de consistentie.
 - [ ] **Relaties** — Return type hints op alle relaties? Correcte relatie-types?
 - [ ] **Scopes** — Herbruikbare query-patronen als scopes gedefinieerd?
 - [ ] **Accessors/Mutators** — Gebruikt waar het de code vereenvoudigt?
-- [ ] **Factories** — Hebben alle models factories? Zijn ze up-to-date met de migraties?
+- [ ] **Factories** — Hebben alle models factories? Zijn ze up-to-date met de migraties? Lijst missende factories op.
 - [ ] **Soft deletes** — Waar relevant toegepast?
 
 ---
 
 ### D5. Database & Multi-Platform Compatibiliteit
 
-De app draait op SQLite (lokaal, Herd) en PostgreSQL (staging, Laravel Cloud). De eigenaar overweegt om lokaal ook naar PostgreSQL over te stappen. **Geef een expliciet advies** over deze keuze.
+De app draait op verschillende database engines lokaal en op staging. Evalueer of de codebase correct omgaat met de verschillen.
 
 **Check specifiek:**
 
-- [ ] **DbDialect helper** — Wordt deze consistent gebruikt voor database-specifieke SQL? Zijn er plekken waar nog raw SQLite of PostgreSQL syntax staat?
+- [ ] **DbDialect helper (of equivalent)** — Wordt deze consistent gebruikt voor database-specifieke SQL? Zijn er plekken waar nog raw platform-specifieke syntax staat?
 - [ ] **Raw queries** — Waar worden `DB::raw()`, `DB::select()` of raw expressions gebruikt? Zijn deze platform-safe?
-- [ ] **Migrations** — Gebruiken alle migraties platform-agnostische column types? Geen SQLite-specifieke of PostgreSQL-specifieke syntax?
-- [ ] **JSON columns** — Correct gehandeld voor beide platformen? Let op verschil tussen SQLite (text) en PostgreSQL (native JSON) bij query-tijd operaties
+- [ ] **Migrations** — Gebruiken alle migraties platform-agnostische column types?
+- [ ] **JSON columns** — Correct gehandeld voor beide platformen?
 - [ ] **Date/time functies** — Consistent via DbDialect of Eloquent, niet via raw SQL?
 - [ ] **Index strategieën** — Werken alle indexen op beide platformen?
 - [ ] **Transacties** — Correct gebruik van database transacties waar nodig?
-- [ ] **Week/date berekeningen** — SQLite `strftime('%W')` vs PostgreSQL `EXTRACT(WEEK)` geven andere resultaten (0-based vs ISO). Waar wordt dit gebruikt en is het veilig?
+- [ ] **Week/date berekeningen** — Verschillende DB engines hanteren andere week-conventies (bv. ISO vs 0-based). Waar wordt dit gebruikt en is het veilig?
 
-**Geef een advies over SQLite vs PostgreSQL lokaal:**
+**Geef een advies over de database-strategie:**
 
-Weeg de volgende factoren af:
-- **Pariteit:** Staging draait PostgreSQL. Hoeveel risico levert het verschil op? Zijn er bugs die alleen op staging optreden door database-verschil?
-- **DbDialect overhead:** De helper lost syntax-verschil op, maar voegt complexiteit toe. Is die overhead het waard als lokaal ook PostgreSQL draait?
-- **Ontwikkelgemak:** SQLite is zero-config, PostgreSQL vereist een draaiende server. Hoe zwaar weegt dat?
-- **Features:** Gebruikt de codebase PostgreSQL-specifieke features (native JSON queries, array columns, full-text search) die op SQLite niet werken?
-- **Analyse workflow:** De eigenaar gebruikt de lokale database voor ad-hoc data analyse via chat sessies. Heeft PostgreSQL hier voordelen (betere query planner, window functions, CTEs)?
-- **Concreet advies:** Aanbevelen om lokaal naar PostgreSQL te switchen, of SQLite behouden? Met onderbouwing
+Weeg af:
+- **Pariteit:** Hoeveel risico levert het verschil tussen lokaal en staging op?
+- **DbDialect overhead:** Lost de helper het probleem op of voegt het complexiteit toe die niet nodig is?
+- **Ontwikkelgemak:** Zero-config vs draaiende server
+- **Features:** Worden DB-specifieke features gebruikt die op het andere platform niet werken?
+- **Analyse workflow:** Voor ad-hoc data analyse via chat sessies — welk platform heeft voordelen?
 
 ---
 
 ### D6. REST API Volledigheid & Kwaliteit
 
-De huidige API heeft 4 resources (dashboard, orders, customers, products). Evalueer wat er is en wat er mist.
+Evalueer wat er is en wat er mist in de huidige API.
 
 **Check de bestaande API op:**
 
@@ -201,7 +245,7 @@ De huidige API heeft 4 resources (dashboard, orders, customers, products). Evalu
 - [ ] **Consistentie** — Volgen alle endpoints dezelfde patronen voor filtering, paginatie, sorting?
 - [ ] **Named routes** — Hebben alle API routes namen?
 - [ ] **Versioning** — Is de v1 prefix correct opgezet voor toekomstige versies?
-- [ ] **Rate limiting** — Is er rate limiting op de API?
+- [ ] **Rate limiting** — Is er rate limiting op de API? Per route of globaal?
 - [ ] **Response format** — Consistent gebruik van API Resources? Envelope pattern?
 - [ ] **Error responses** — Consistent JSON error format bij validation errors, 404s, 500s?
 
@@ -213,8 +257,8 @@ Welke data/functionaliteit is beschikbaar via services maar niet via de API? Den
 - Scoring data (RFM scores, segments, lifecycle stages)
 - Analytics data (cohort analyse, retention, revenue trends)
 - Product portfolio en classificatie
-- Klaviyo engagement data
-- Odoo data (BOMs, open POs, stock)
+- Engagement data (Klaviyo, follower scores)
+- ERP data (BOMs, open POs, stock)
 - Demand events en scenario's
 
 Geef een concrete lijst van endpoints die nodig zijn voor een volledige interne API.
@@ -249,16 +293,15 @@ Geef een concrete lijst van endpoints die nodig zijn voor een volledige interne 
 
 **Externe API credentials:**
 
-- [ ] Shopify API tokens — veilig opgeslagen en geroteerd?
-- [ ] Klaviyo API keys — veilig opgeslagen?
-- [ ] Odoo credentials — veilig opgeslagen?
+- [ ] Alle externe API tokens (Shopify, Klaviyo, Odoo, etc.) — veilig opgeslagen?
 - [ ] Worden credentials gelogd bij sync fouten?
+- [ ] Is er een rotatie-strategie?
 
 ---
 
 ### D8. Frontend-Readiness & Design System
 
-De frontend is een prototype. Evalueer of de basis er is om vlot een volledige frontend te bouwen. De styling is gebaseerd op **shadcn/ui (New York style)** met **Tailwind CSS v4** en **OKLCH design tokens**.
+Evalueer of de frontend-basis solide is om op door te bouwen. De styling is gebaseerd op **shadcn/ui (New York style)** met **Tailwind CSS** en **OKLCH design tokens**.
 
 **Check Inertia & TypeScript basis:**
 
@@ -271,10 +314,10 @@ De frontend is een prototype. Evalueer of de basis er is om vlot een volledige f
 
 **Check design system & styling architectuur:**
 
-- [ ] **shadcn/ui component set** — Welke 27 componenten zijn geïnstalleerd? Welke ontbreken voor een volledig dashboard? (data table, tabs, popover, command palette, toast/sonner, calendar, date picker, charts?)
+- [ ] **shadcn/ui component set** — Welke componenten zijn geïnstalleerd? Welke ontbreken voor een volledig dashboard? (data table, tabs, popover, command palette, toast/sonner, calendar, date picker, charts?)
 - [ ] **CVA (Class Variance Authority) patronen** — Worden alle componenten consistent via CVA gebouwd? Zijn varianten voorspelbaar?
 - [ ] **Design tokens in CSS** — Is het OKLCH kleurensysteem compleet? Zijn er semantische tokens voor alle UI states (success, warning, info naast destructive)?
-- [ ] **Chart kleuren** — Zijn `--chart-1` t/m `--chart-5` voldoende voor data-rijke dashboards? Zijn ze onderscheidbaar in zowel light als dark mode?
+- [ ] **Chart kleuren** — Zijn de `--chart-*` tokens voldoende voor data-rijke dashboards? Zijn ze onderscheidbaar in light én dark mode?
 - [ ] **Spacing & typography schaal** — Is er een consistent systeem voor spacing en font sizes, of wordt het ad-hoc toegepast?
 - [ ] **Dark mode** — Is het appearance systeem correct opgezet? Zijn alle custom tokens (niet-shadcn) ook dark mode-aware?
 - [ ] **Mobile-first** — Is de bestaande CSS/layout mobile-responsive? Kloppen de breakpoint keuzes?
@@ -286,9 +329,9 @@ De frontend is een prototype. Evalueer of de basis er is om vlot een volledige f
 - [ ] **Content area** — Is er een standaard content wrapper met consistente padding, max-width, scroll behavior?
 - [ ] **Page template patroon** — Is er een herbruikbaar patroon voor dashboard pages (header + filters + content grid)?
 
-**Check docs/styleguide.md:**
+**Check `docs/architectuur/styleguide.md`:**
 
-- [ ] **Volledigheid** — Documenteert de styleguide alle patronen die nodig zijn om consistent te bouwen? (kleur gebruik, spacing, typografie, component varianten, responsive breakpoints)
+- [ ] **Volledigheid** — Documenteert de styleguide alle patronen die nodig zijn om consistent te bouwen?
 - [ ] **Formattering conventies** — Currency (EUR), getallen (NL locale), datums — consistent gedocumenteerd en toegepast?
 - [ ] **Up-to-date** — Komt de styleguide overeen met wat er daadwerkelijk in de code staat?
 
@@ -299,13 +342,12 @@ De frontend is een prototype. Evalueer of de basis er is om vlot een volledige f
 - Is er een patroon voor data fetching vanuit React (polling, deferred props)?
 - Welke shadcn/ui componenten moeten nog toegevoegd worden?
 - Zijn er UI patterns die gestandaardiseerd moeten worden voor je begint? (data tables, filter bars, detail panels, empty states, error states)
-- Moet de styleguide aangevuld worden met een component showcase of storybook-achtige pagina?
 
 ---
 
 ### D9. Naamgeving & Navigeerbaarheid
 
-Met 61 services en 41 commands moet de codebase zelfverklarend zijn.
+Met veel services en commands moet de codebase zelfverklarend zijn.
 
 **Check specifiek:**
 
@@ -316,18 +358,15 @@ Met 61 services en 41 commands moet de codebase zelfverklarend zijn.
 - [ ] **Enum organisatie** — Logisch benoemd en georganiseerd?
 - [ ] **Config keys** — Herkenbare naamgeving in config files?
 
-**Specifiek checken:**
+**Verifieer eerdere bevindingen:**
 
-De vorige audit (maart 2026) constateerde misleidende servicenamen. Verifieer of deze nog bestaan:
-- `ForecastService` — doet alleen actuals, geen forecasting?
-- `StockForecastService` — forecast geen stock?
-- `ProductionScheduleService` — doet 3+ dingen?
+Loop de "misleidende namen"-issues van het vorige audit rapport door en check of ze nog steeds bestaan, opgelost zijn, of nieuwe varianten ontstaan zijn.
 
 ---
 
 ### D10. Test Coverage & Kwaliteit
 
-65 tests (64 Feature, 1 Unit). Evalueer dekking en kwaliteit.
+Evalueer dekking en kwaliteit.
 
 **Check specifiek:**
 
@@ -336,8 +375,9 @@ De vorige audit (maart 2026) constateerde misleidende servicenamen. Verifieer of
 - [ ] **Factory gebruik** — Worden factories correct gebruikt? Up-to-date met migraties?
 - [ ] **Edge cases** — Worden edge cases getest (lege data, null waarden, grensgevallen)?
 - [ ] **API tests** — Zijn alle API endpoints getest? Response format, auth, validation?
-- [ ] **Database tests** — Werken alle tests op zowel SQLite als PostgreSQL?
+- [ ] **Database tests** — Werken alle tests op zowel lokaal als staging platform?
 - [ ] **Geen stubs voor kritieke logica** — Worden externe APIs correct gemocked?
+- [ ] **Browser tests (Pest 4)** — Zijn er smoke tests voor de belangrijkste pages?
 
 **Evalueer gaps:**
 
@@ -351,7 +391,7 @@ Welke delen van de codebase hebben GEEN test coverage en zouden dat wel moeten h
 
 - [ ] **Consistent error patroon** — Is er een standaard manier waarop fouten worden afgehandeld in services?
 - [ ] **Logging strategie** — Wat wordt gelogd? Is er een consistent log level beleid?
-- [ ] **Sync monitoring** — Hoe weet je of een sync gefaald is? SyncState correct gebruikt?
+- [ ] **Sync monitoring** — Hoe weet je of een sync gefaald is? `SyncState` correct gebruikt?
 - [ ] **Geen stille failures** — Zijn er plekken waar fouten worden geslikt (lege catch blocks)?
 - [ ] **Queue failures** — Hoe worden mislukte jobs afgehandeld?
 - [ ] **Health checks** — Is er een manier om te controleren of het systeem gezond is?
@@ -360,36 +400,35 @@ Welke delen van de codebase hebben GEEN test coverage en zouden dat wel moeten h
 
 ### D12. Database Workflow: Lokaal → Staging
 
-De huidige flow om de lokale database op te zetten, te vullen met data, en dat naar staging te krijgen is **onduidelijk en frictievol**. De eigenaar ervaart problemen maar kan niet goed pinpointen waar het aan ligt. Evalueer de volledige workflow.
+Evalueer de volledige workflow van verse omgeving naar gevulde lokale database naar gesynchroniseerde staging.
 
-**Context:**
+**Context (bevestig actueel):**
 
-- **Lokaal:** SQLite via Herd — wordt ook gebruikt voor ad-hoc data analyse via chat sessies, moet dus altijd up-to-date zijn
-- **Staging:** PostgreSQL via Laravel Cloud — moet dezelfde data en schema hebben als lokaal
-- **Data komt binnen via sync pipeline** (Shopify, Klaviyo, Odoo) — niet via seeders
+- **Lokaal:** [database engine] — wordt ook gebruikt voor ad-hoc data analyse via chat sessies, moet dus altijd up-to-date zijn
+- **Staging:** [database engine + hosting] — moet dezelfde data en schema hebben als lokaal
+- **Data komt binnen via sync pipeline** — niet via seeders
 - **Seeders bevatten:** configuratie-data (supply profiles, scenarios, demand events, users) — geen transactiedata
-- **72 migraties** moeten op beide platformen werken
 
 **Check de seeding-strategie:**
 
-- [ ] **DatabaseSeeder** — Roept die alle relevante seeders aan? Of moet je handmatig weten welke seeders in welke volgorde gedraaid moeten worden?
+- [ ] **DatabaseSeeder** — Roept die alle relevante seeders aan in correcte volgorde?
 - [ ] **Seeder idempotentie** — Kunnen seeders veilig opnieuw gedraaid worden? (`updateOrCreate` vs `create`)
 - [ ] **Seeder afhankelijkheden** — Zijn er seeders die van elkaar afhangen? Is de volgorde gedocumenteerd?
-- [ ] **Factory completeness** — Hebben alle 28 models factories? Zijn factories up-to-date met recente migratie-toevoegingen?
-- [ ] **Factory cascading** — Maken factories gerelateerde models aan? (bijv. maakt ScenarioFactory ook ScenarioAssumptions?)
+- [ ] **Factory completeness** — Hebben alle models factories? Zijn factories up-to-date met recente migratie-toevoegingen?
+- [ ] **Factory cascading** — Maken factories gerelateerde models aan?
 
 **Check de migratie-flow:**
 
-- [ ] **Schema divergentie** — Kan het schema op SQLite en PostgreSQL uit de pas lopen? Hoe detecteer je dat?
+- [ ] **Schema divergentie** — Kan het schema op lokaal en staging uit de pas lopen? Hoe detecteer je dat?
 - [ ] **Rollback veiligheid** — Zijn alle migraties veilig rollback-baar op beide platformen?
-- [ ] **Constraint handling** — Foreign keys, unique constraints, indexen — werken ze identiek op SQLite en PostgreSQL?
+- [ ] **Constraint handling** — Foreign keys, unique constraints, indexen — werken ze identiek op beide platformen?
 - [ ] **`migrate:fresh` vs `migrate`** — Welke strategie wordt gebruikt op staging? Is er risico op dataverlies?
 
 **Check de sync pipeline als data source:**
 
 - [ ] **SyncState bij environment switch** — Wat gebeurt er als SyncState records van lokaal naar staging gekopieerd worden? Worden dan halve syncs hervat?
 - [ ] **Credential isolatie** — Draaien lokaal en staging tegen dezelfde API credentials? Is dat een risico?
-- [ ] **Data volume** — Kan de sync pipeline staging vullen binnen een redelijke tijd? Of is er een snellere initiële vul-strategie nodig?
+- [ ] **Data volume** — Kan de sync pipeline staging vullen binnen een redelijke tijd?
 - [ ] **Sync onafhankelijkheid** — Kan staging zelfstandig syncen zonder afhankelijk te zijn van lokale data?
 
 **Evalueer wat er ONTBREEKT voor een vlotte workflow:**
@@ -414,15 +453,17 @@ Beschrijf hoe de flow **zou moeten werken** in een ideale situatie:
 
 ## Output Formaat
 
-Lever het rapport op als Markdown bestand met de volgende structuur:
+Lever het rapport op als Markdown bestand: `docs/audits/audit-rapport-YYYY-MM.md` met de volgende structuur:
 
 ```markdown
 # Architectuur Audit Rapport — Cyclowax Dashboard
-## Datum: [datum]
+## Datum: YYYY-MM-DD
 
 ## Executive Summary
+- Snapshot tabel (cijfers + Δ vs vorige audit)
 - Totaal score per dimensie (tabel met groen/oranje/rood)
 - Top 5 bevindingen die het eerst aangepakt moeten worden
+- Status van top 5 issues uit vorige audit (opgelost / nog open / nieuw)
 - Algemene architectuurkwaliteit in 3-4 zinnen
 
 ## Per Dimensie
@@ -441,7 +482,7 @@ Lever het rapport op als Markdown bestand met de volgende structuur:
 ## Bijlage B: Ontbrekende shadcn/ui Componenten & Frontend Gaps
 [Lijst van componenten, types en patterns die nodig zijn voor frontend uitbouw]
 
-## Bijlage C: Database Advies — SQLite vs PostgreSQL Lokaal
+## Bijlage C: Database Advies
 [Onderbouwd advies met voor/nadelen en aanbeveling]
 
 ## Bijlage D: Ideale Database Workflow
@@ -455,10 +496,12 @@ Lever het rapport op als Markdown bestand met de volgende structuur:
 
 ## Aanwijzingen voor de auditor
 
-1. **Lees eerst de volledige codebase** — begin met `routes/`, dan `app/Http/`, dan `app/Services/` per domein, dan `app/Models/`, dan `app/Console/Commands/`, dan `tests/`, dan `resources/js/`
-2. **Vergelijk siblings** — pak bij elke dimensie minimaal 3-5 concrete bestanden en vergelijk ze op consistentie
-3. **Wees specifiek** — "sommige services missen return types" is nutteloos. "OrderMarginCalculator:45 mist return type op calculate()" is bruikbaar
-4. **Onderbouw met impact** — waarom is het een probleem? Wat gaat er mis als we het niet fixen?
-5. **Wees eerlijk** — benoem ook wat goed gaat. Dit is een evaluatie, geen afrekening
-6. **Denk aan de toekomst** — de frontend moet nog gebouwd worden, de API moet uitgebreid worden. Evalueer of de huidige basis daar klaar voor is
-7. **Multi-database** — test elke raw query claim tegen zowel SQLite als PostgreSQL compatibiliteit
+1. **Vul eerst de Snapshot in** — zonder actuele cijfers heeft de audit geen referentiekader
+2. **Lees daarna de volledige codebase** — begin met `routes/`, dan `app/Http/`, dan `app/Services/` per domein, dan `app/Models/`, dan `app/Console/Commands/`, dan `tests/`, dan `resources/js/`
+3. **Vergelijk met het vorige rapport** — markeer per dimensie of de score is verbeterd, gelijk gebleven of verslechterd
+4. **Vergelijk siblings** — pak bij elke dimensie minimaal 3-5 concrete bestanden en vergelijk ze op consistentie
+5. **Wees specifiek** — bestand:regel notatie, geen vage uitspraken
+6. **Onderbouw met impact** — waarom is het een probleem? Wat gaat er mis als we het niet fixen?
+7. **Wees eerlijk** — benoem ook wat goed gaat. Dit is een evaluatie, geen afrekening
+8. **Denk aan de toekomst** — evalueer of de huidige basis klaar is voor de volgende fase van de roadmap
+9. **Multi-database** — test elke raw query claim tegen beide database platformen
