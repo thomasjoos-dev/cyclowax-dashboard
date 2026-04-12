@@ -9,9 +9,8 @@ use Illuminate\Database\UniqueConstraintViolationException;
 
 it('belongs to a scenario', function () {
     $scenario = Scenario::factory()->create();
-    $mix = ScenarioProductMix::create([
+    $mix = ScenarioProductMix::factory()->waxTablet()->create([
         'scenario_id' => $scenario->id,
-        'product_category' => ProductCategory::WaxTablet->value,
         'acq_share' => 0.15,
         'repeat_share' => 0.35,
         'avg_unit_price' => 27.50,
@@ -24,16 +23,14 @@ it('belongs to a scenario', function () {
 it('loads product mixes from scenario', function () {
     $scenario = Scenario::factory()->create();
 
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->starterKit()->create([
         'scenario_id' => $scenario->id,
-        'product_category' => ProductCategory::StarterKit->value,
         'acq_share' => 0.40,
         'repeat_share' => 0.05,
         'avg_unit_price' => 220.00,
     ]);
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->waxTablet()->create([
         'scenario_id' => $scenario->id,
-        'product_category' => ProductCategory::WaxTablet->value,
         'acq_share' => 0.10,
         'repeat_share' => 0.35,
         'avg_unit_price' => 27.50,
@@ -48,20 +45,16 @@ it('enforces unique constraint on scenario, category, region and product', funct
     $scenario = Scenario::factory()->create();
     $product = Product::factory()->create(['product_category' => ProductCategory::Chain->value]);
 
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->chain()->forRegion(ForecastRegion::De)->create([
         'scenario_id' => $scenario->id,
-        'product_category' => ProductCategory::Chain->value,
-        'region' => ForecastRegion::De->value,
         'product_id' => $product->id,
         'acq_share' => 0.10,
         'repeat_share' => 0.30,
         'avg_unit_price' => 85.00,
     ]);
 
-    expect(fn () => ScenarioProductMix::create([
+    expect(fn () => ScenarioProductMix::factory()->chain()->forRegion(ForecastRegion::De)->create([
         'scenario_id' => $scenario->id,
-        'product_category' => ProductCategory::Chain->value,
-        'region' => ForecastRegion::De->value,
         'product_id' => $product->id,
         'acq_share' => 0.20,
         'repeat_share' => 0.40,
@@ -72,19 +65,15 @@ it('enforces unique constraint on scenario, category, region and product', funct
 it('allows same category for different regions', function () {
     $scenario = Scenario::factory()->create();
 
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->chain()->forRegion(ForecastRegion::De)->create([
         'scenario_id' => $scenario->id,
-        'product_category' => ProductCategory::Chain->value,
-        'region' => ForecastRegion::De->value,
         'acq_share' => 0.10,
         'repeat_share' => 0.30,
         'avg_unit_price' => 85.00,
     ]);
 
-    $mix = ScenarioProductMix::create([
+    $mix = ScenarioProductMix::factory()->chain()->forRegion(ForecastRegion::Be)->create([
         'scenario_id' => $scenario->id,
-        'product_category' => ProductCategory::Chain->value,
-        'region' => ForecastRegion::Be->value,
         'acq_share' => 0.15,
         'repeat_share' => 0.35,
         'avg_unit_price' => 85.00,
@@ -96,9 +85,8 @@ it('allows same category for different regions', function () {
 it('cascades delete when scenario is deleted', function () {
     $scenario = Scenario::factory()->create();
 
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->waxTablet()->create([
         'scenario_id' => $scenario->id,
-        'product_category' => ProductCategory::WaxTablet->value,
         'acq_share' => 0.10,
         'repeat_share' => 0.35,
         'avg_unit_price' => 27.50,

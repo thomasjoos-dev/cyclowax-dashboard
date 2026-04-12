@@ -12,17 +12,17 @@ it('extracts SKU earmarks from product-targeted events', function () {
         'product_category' => ProductCategory::WaxKit->value,
     ]);
 
-    $event = DemandEvent::create([
+    $event = DemandEvent::factory()->create([
         'name' => 'PWK Campaign',
-        'type' => DemandEventType::PromoCampaign->value,
+        'type' => DemandEventType::PromoCampaign,
         'start_date' => '2026-06-01',
         'end_date' => '2026-08-31',
         'is_historical' => false,
     ]);
 
-    DemandEventCategory::create([
+    DemandEventCategory::factory()->create([
         'demand_event_id' => $event->id,
-        'product_category' => ProductCategory::WaxKit->value,
+        'product_category' => ProductCategory::WaxKit,
         'product_id' => $product->id,
         'expected_uplift_units' => 150,
         'pull_forward_pct' => 0,
@@ -42,14 +42,16 @@ it('extracts SKU earmarks from product-targeted events', function () {
 });
 
 it('ignores category-level events without product_id', function () {
-    DemandEvent::create([
+    $event = DemandEvent::factory()->create([
         'name' => 'Black Friday',
-        'type' => DemandEventType::PromoCampaign->value,
+        'type' => DemandEventType::PromoCampaign,
         'start_date' => '2026-11-16',
         'end_date' => '2026-12-01',
         'is_historical' => false,
-    ])->categories()->create([
-        'product_category' => ProductCategory::Chain->value,
+    ]);
+    DemandEventCategory::factory()->create([
+        'demand_event_id' => $event->id,
+        'product_category' => ProductCategory::Chain,
         'expected_uplift_units' => 60,
         'pull_forward_pct' => 0,
     ]);
@@ -65,24 +67,26 @@ it('handles mixed category-level and product-targeted rows in one event', functi
         'product_category' => ProductCategory::Heater->value,
     ]);
 
-    $event = DemandEvent::create([
+    $event = DemandEvent::factory()->create([
         'name' => 'Summer Campaign',
-        'type' => DemandEventType::PromoCampaign->value,
+        'type' => DemandEventType::PromoCampaign,
         'start_date' => '2026-07-01',
         'end_date' => '2026-07-31',
         'is_historical' => false,
     ]);
 
     // Category-level chain boost (no product_id)
-    $event->categories()->create([
-        'product_category' => ProductCategory::Chain->value,
+    DemandEventCategory::factory()->create([
+        'demand_event_id' => $event->id,
+        'product_category' => ProductCategory::Chain,
         'expected_uplift_units' => 60,
         'pull_forward_pct' => 0,
     ]);
 
     // Product-targeted heater boost
-    $event->categories()->create([
-        'product_category' => ProductCategory::Heater->value,
+    DemandEventCategory::factory()->create([
+        'demand_event_id' => $event->id,
+        'product_category' => ProductCategory::Heater,
         'product_id' => $perfHeater->id,
         'expected_uplift_units' => 50,
         'pull_forward_pct' => 0,
@@ -102,14 +106,16 @@ it('ignores historical events', function () {
         'product_category' => ProductCategory::WaxKit->value,
     ]);
 
-    DemandEvent::create([
+    $event = DemandEvent::factory()->create([
         'name' => 'Past Launch',
-        'type' => DemandEventType::ProductLaunch->value,
+        'type' => DemandEventType::ProductLaunch,
         'start_date' => '2026-01-13',
         'end_date' => '2026-03-15',
         'is_historical' => true,
-    ])->categories()->create([
-        'product_category' => ProductCategory::WaxKit->value,
+    ]);
+    DemandEventCategory::factory()->create([
+        'demand_event_id' => $event->id,
+        'product_category' => ProductCategory::WaxKit,
         'product_id' => $product->id,
         'expected_uplift_units' => 100,
         'pull_forward_pct' => 0,
@@ -124,22 +130,24 @@ it('ignores historical events', function () {
 it('reports product targeting correctly on model', function () {
     $product = Product::factory()->create();
 
-    $event = DemandEvent::create([
+    $event = DemandEvent::factory()->create([
         'name' => 'Test Event',
-        'type' => DemandEventType::PromoCampaign->value,
+        'type' => DemandEventType::PromoCampaign,
         'start_date' => '2026-06-01',
         'end_date' => '2026-06-30',
         'is_historical' => false,
     ]);
 
-    $categoryLevel = $event->categories()->create([
-        'product_category' => ProductCategory::Chain->value,
+    $categoryLevel = DemandEventCategory::factory()->create([
+        'demand_event_id' => $event->id,
+        'product_category' => ProductCategory::Chain,
         'expected_uplift_units' => 60,
         'pull_forward_pct' => 0,
     ]);
 
-    $productLevel = $event->categories()->create([
-        'product_category' => ProductCategory::Heater->value,
+    $productLevel = DemandEventCategory::factory()->create([
+        'demand_event_id' => $event->id,
+        'product_category' => ProductCategory::Heater,
         'product_id' => $product->id,
         'expected_uplift_units' => 50,
         'pull_forward_pct' => 0,

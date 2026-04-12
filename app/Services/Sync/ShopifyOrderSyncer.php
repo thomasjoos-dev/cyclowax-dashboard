@@ -15,6 +15,59 @@ class ShopifyOrderSyncer
 {
     protected int $syncedCount = 0;
 
+    /**
+     * Shared GraphQL fields for order queries.
+     * Used by both pagination and bulk operation strategies.
+     */
+    private const ORDER_FIELDS = <<<'GRAPHQL'
+        id
+        name
+        createdAt
+        totalPriceSet { shopMoney { amount currencyCode } }
+        subtotalPriceSet { shopMoney { amount } }
+        totalShippingPriceSet { shopMoney { amount } }
+        totalTaxSet { shopMoney { amount } }
+        totalDiscountsSet { shopMoney { amount } }
+        totalRefundedSet { shopMoney { amount } }
+        displayFinancialStatus
+        displayFulfillmentStatus
+        discountCodes
+        billingAddress { countryCodeV2 provinceCode zip }
+        shippingAddress { countryCodeV2 provinceCode zip }
+        landingPageUrl
+        referrerUrl
+        sourceName
+        customerJourneySummary {
+            firstVisit {
+                source
+                sourceType
+                landingPage
+                referrerUrl
+                utmParameters { source medium campaign content term }
+            }
+            lastVisit {
+                source
+                sourceType
+                landingPage
+                referrerUrl
+                utmParameters { source medium campaign content term }
+            }
+        }
+        customer {
+            id
+            firstName
+            lastName
+            email
+            numberOfOrders
+            amountSpent { amount }
+            defaultAddress { countryCodeV2 }
+            locale
+            tags
+            emailMarketingConsent { marketingState }
+            createdAt
+        }
+    GRAPHQL;
+
     public function __construct(
         protected ShopifyClient $shopify,
         protected PostalProvinceResolver $provinceResolver,
@@ -71,6 +124,8 @@ class ShopifyOrderSyncer
     {
         $cursor = null;
         $hasNextPage = true;
+        $fields = self::ORDER_FIELDS;
+        $lineItemFields = self::lineItemFields('first: 100');
 
         while ($hasNextPage) {
             $afterClause = $cursor ? ", after: \"{$cursor}\"" : '';
@@ -89,64 +144,8 @@ class ShopifyOrderSyncer
                         }
                         edges {
                             node {
-                                id
-                                name
-                                createdAt
-                                totalPriceSet { shopMoney { amount currencyCode } }
-                                subtotalPriceSet { shopMoney { amount } }
-                                totalShippingPriceSet { shopMoney { amount } }
-                                totalTaxSet { shopMoney { amount } }
-                                totalDiscountsSet { shopMoney { amount } }
-                                totalRefundedSet { shopMoney { amount } }
-                                displayFinancialStatus
-                                displayFulfillmentStatus
-                                discountCodes
-                                billingAddress { countryCodeV2 provinceCode zip }
-                                shippingAddress { countryCodeV2 provinceCode zip }
-                                landingPageUrl
-                                referrerUrl
-                                sourceName
-                                customerJourneySummary {
-                                    firstVisit {
-                                        source
-                                        sourceType
-                                        landingPage
-                                        referrerUrl
-                                        utmParameters { source medium campaign content term }
-                                    }
-                                    lastVisit {
-                                        source
-                                        sourceType
-                                        landingPage
-                                        referrerUrl
-                                        utmParameters { source medium campaign content term }
-                                    }
-                                }
-                                customer {
-                                    id
-                                    firstName
-                                    lastName
-                                    email
-                                    numberOfOrders
-                                    amountSpent { amount }
-                                    defaultAddress { countryCodeV2 }
-                                    locale
-                                    tags
-                                    emailMarketingConsent { marketingState }
-                                    createdAt
-                                }
-                                lineItems(first: 100) {
-                                    edges {
-                                        node {
-                                            title
-                                            product { productType }
-                                            sku
-                                            quantity
-                                            originalUnitPriceSet { shopMoney { amount } }
-                                            variant { sku title }
-                                        }
-                                    }
-                                }
+                                {$fields}
+                                {$lineItemFields}
                             }
                         }
                     }
@@ -170,69 +169,16 @@ class ShopifyOrderSyncer
      */
     protected function syncViaBulkOperation(CarbonImmutable $from, CarbonImmutable $to): void
     {
+        $fields = self::ORDER_FIELDS;
+        $lineItemFields = self::lineItemFields();
+
         $bulkQuery = <<<GRAPHQL
             {
                 orders(query: "created_at:>={$from->toDateString()} created_at:<={$to->toDateString()}") {
                     edges {
                         node {
-                            id
-                            name
-                            createdAt
-                            totalPriceSet { shopMoney { amount currencyCode } }
-                            subtotalPriceSet { shopMoney { amount } }
-                            totalShippingPriceSet { shopMoney { amount } }
-                            totalTaxSet { shopMoney { amount } }
-                            totalDiscountsSet { shopMoney { amount } }
-                            totalRefundedSet { shopMoney { amount } }
-                            displayFinancialStatus
-                            displayFulfillmentStatus
-                            discountCodes
-                            billingAddress { countryCodeV2 provinceCode zip }
-                            shippingAddress { countryCodeV2 provinceCode zip }
-                            landingPageUrl
-                            referrerUrl
-                            sourceName
-                            customerJourneySummary {
-                                firstVisit {
-                                    source
-                                    sourceType
-                                    landingPage
-                                    referrerUrl
-                                    utmParameters { source medium campaign content term }
-                                }
-                                lastVisit {
-                                    source
-                                    sourceType
-                                    landingPage
-                                    referrerUrl
-                                    utmParameters { source medium campaign content term }
-                                }
-                            }
-                            customer {
-                                id
-                                firstName
-                                lastName
-                                email
-                                numberOfOrders
-                                amountSpent { amount }
-                                defaultAddress { countryCodeV2 }
-                                locale
-                                tags
-                                emailMarketingConsent { marketingState }
-                                createdAt
-                            }
-                            lineItems {
-                                edges {
-                                    node {
-                                        title
-                                        product { productType }
-                                        sku
-                                        quantity
-                                        originalUnitPriceSet { shopMoney { amount } }
-                                        variant { sku title }
-                                    }
-                                }
-                            }
+                            {$fields}
+                            {$lineItemFields}
                         }
                     }
                 }
@@ -481,6 +427,30 @@ class ShopifyOrderSyncer
                 'shopify_created_at' => $data['createdAt'] ?? null,
             ]
         );
+    }
+
+    /**
+     * Build the lineItems GraphQL fragment.
+     * Pagination mode passes "first: 100"; bulk mode omits the argument.
+     */
+    private static function lineItemFields(string $args = ''): string
+    {
+        $argsClause = $args ? "({$args})" : '';
+
+        return <<<GRAPHQL
+            lineItems{$argsClause} {
+                edges {
+                    node {
+                        title
+                        product { productType }
+                        sku
+                        quantity
+                        originalUnitPriceSet { shopMoney { amount } }
+                        variant { sku title }
+                    }
+                }
+            }
+        GRAPHQL;
     }
 
     /**

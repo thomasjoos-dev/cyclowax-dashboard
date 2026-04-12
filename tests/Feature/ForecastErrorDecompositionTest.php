@@ -8,7 +8,7 @@ use App\Services\Forecast\Tracking\ForecastTrackingService;
 function createSnapshotsWithActuals(Scenario $scenario, string $yearMonth, array $categories): void
 {
     foreach ($categories as $cat) {
-        ForecastSnapshot::create([
+        ForecastSnapshot::factory()->create([
             'scenario_id' => $scenario->id,
             'year_month' => $yearMonth,
             'product_category' => $cat['category'],
@@ -94,7 +94,7 @@ it('returns empty array when no actuals exist', function () {
     $scenario = Scenario::factory()->create(['year' => 2026]);
 
     // Snapshot without actuals
-    ForecastSnapshot::create([
+    ForecastSnapshot::factory()->create([
         'scenario_id' => $scenario->id,
         'year_month' => '2026-01',
         'product_category' => ProductCategory::WaxTablet->value,

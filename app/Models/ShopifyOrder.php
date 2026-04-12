@@ -14,8 +14,14 @@ class ShopifyOrder extends Model
     /** @use HasFactory<ShopifyOrderFactory> */
     use HasFactory;
 
-    /** @var list<string> */
+    /**
+     * Sync data: fields populated directly from Shopify GraphQL sync.
+     * Computed data: fields calculated by internal services (margins, classifications, attribution enrichment).
+     *
+     * @var list<string>
+     */
     protected $fillable = [
+        // --- Sync data (from Shopify) ---
         'shopify_id',
         'name',
         'ordered_at',
@@ -25,7 +31,6 @@ class ShopifyOrder extends Model
         'tax',
         'discounts',
         'refunded',
-        'net_revenue',
         'financial_status',
         'fulfillment_status',
         'customer_id',
@@ -36,14 +41,11 @@ class ShopifyOrder extends Model
         'shipping_province_code',
         'shipping_postal_code',
         'currency',
-        'total_cost',
-        'gross_margin',
-        'is_first_order',
-        'local_orders_count',
-        'first_order_channel',
+        'discount_codes',
         'landing_page_url',
         'referrer_url',
         'source_name',
+        // First-touch attribution
         'ft_source',
         'ft_source_type',
         'ft_utm_source',
@@ -53,6 +55,7 @@ class ShopifyOrder extends Model
         'ft_utm_term',
         'ft_landing_page',
         'ft_referrer_url',
+        // Last-touch attribution
         'lt_source',
         'lt_source_type',
         'lt_utm_source',
@@ -62,14 +65,21 @@ class ShopifyOrder extends Model
         'lt_utm_term',
         'lt_landing_page',
         'lt_referrer_url',
-        'discount_codes',
-        'payment_fee',
-        'shipping_cost',
-        'shipping_carrier',
-        'shipping_cost_estimated',
-        'shipping_margin',
-        'channel_type',
-        'refined_channel',
+
+        // --- Computed data (by internal services) ---
+        'net_revenue',          // OrderMarginCalculator
+        'total_cost',           // OrderMarginCalculator (from BOMs)
+        'gross_margin',         // OrderMarginCalculator
+        'payment_fee',          // OrderMarginCalculator (from payment config)
+        'shipping_cost',        // OdooShippingCostSyncer
+        'shipping_carrier',     // OdooShippingCostSyncer
+        'shipping_cost_estimated', // OdooShippingCostSyncer
+        'shipping_margin',      // OrderMarginCalculator
+        'is_first_order',       // ShopifyOrderSyncer (customer order count)
+        'local_orders_count',   // ShopifyOrderSyncer
+        'first_order_channel',  // ChannelClassificationService
+        'channel_type',         // ChannelClassificationService
+        'refined_channel',      // ChannelClassificationService
     ];
 
     /**
@@ -86,6 +96,22 @@ class ShopifyOrder extends Model
     public function lineItems(): HasMany
     {
         return $this->hasMany(ShopifyLineItem::class, 'order_id');
+    }
+
+    /**
+     * Apply API filter parameters to the query.
+     *
+     * @param  Builder<self>  $query
+     * @param  array<string, mixed>  $filters
+     */
+    public function scopeApplyFilters(Builder $query, array $filters): void
+    {
+        $query
+            ->when($filters['from'] ?? null, fn (Builder $q, string $from) => $q->where('ordered_at', '>=', $from))
+            ->when($filters['to'] ?? null, fn (Builder $q, string $to) => $q->where('ordered_at', '<=', $to))
+            ->when($filters['shipping_country'] ?? null, fn (Builder $q, string $country) => $q->where('shipping_country_code', $country))
+            ->when($filters['billing_country'] ?? null, fn (Builder $q, string $country) => $q->where('billing_country_code', $country))
+            ->when($filters['financial_status'] ?? null, fn (Builder $q, string $status) => $q->where('financial_status', $status));
     }
 
     /**

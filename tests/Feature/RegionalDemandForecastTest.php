@@ -63,13 +63,7 @@ function setupRegionalScenario(): Scenario
     // Seasonal indices (flat = 1.0) for both regions and global
     for ($month = 1; $month <= 12; $month++) {
         foreach ([null, 'de', 'be'] as $region) {
-            SeasonalIndex::create([
-                'month' => $month,
-                'region' => $region,
-                'product_category' => ProductCategory::WaxTablet->value,
-                'index_value' => 1.0,
-                'source' => 'test',
-            ]);
+            SeasonalIndex::factory()->flat()->forCategory(ProductCategory::WaxTablet->value)->create(['month' => $month, 'region' => $region]);
         }
     }
 
@@ -86,9 +80,8 @@ function setupRegionalScenario(): Scenario
     }
 
     // Global product mix (single category for simplicity)
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->waxTablet()->create([
         'scenario_id' => $scenario->id,
-        'product_category' => ProductCategory::WaxTablet->value,
         'acq_share' => 1.0,
         'repeat_share' => 1.0,
         'avg_unit_price' => 27.50,
@@ -121,7 +114,7 @@ it('uses regional assumptions when available with global fallback', function () 
 
     // Add DE-specific assumptions with higher growth rate
     foreach (['Q2', 'Q3', 'Q4'] as $quarter) {
-        ScenarioAssumption::create([
+        ScenarioAssumption::factory()->create([
             'scenario_id' => $scenario->id,
             'quarter' => $quarter,
             'region' => ForecastRegion::De->value,

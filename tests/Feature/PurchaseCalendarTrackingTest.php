@@ -187,23 +187,15 @@ it('stores scopes correctly on run model', function () {
     $s1 = Scenario::factory()->create(['year' => 2026, 'name' => 'base']);
     $s2 = Scenario::factory()->create(['year' => 2026, 'name' => 'ambitious']);
 
-    PurchaseCalendarRun::create([
+    PurchaseCalendarRun::factory()->create([
         'scenario_id' => $s1->id,
         'year' => 2026,
         'warehouse' => null,
-        'generated_at' => now(),
-        'summary' => [],
-        'netting_summary' => [],
-        'sku_mix_summary' => [],
     ]);
-    PurchaseCalendarRun::create([
+    PurchaseCalendarRun::factory()->create([
         'scenario_id' => $s2->id,
         'year' => 2026,
         'warehouse' => 'be',
-        'generated_at' => now(),
-        'summary' => [],
-        'netting_summary' => [],
-        'sku_mix_summary' => [],
     ]);
 
     expect(PurchaseCalendarRun::forScenario($s1)->count())->toBe(1);

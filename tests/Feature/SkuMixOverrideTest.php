@@ -11,7 +11,7 @@ use App\Services\Forecast\SkuMixService;
 
 function createSkuOverride(Scenario $scenario, ProductCategory $category, int $productId, float $skuShare): ScenarioProductMix
 {
-    return ScenarioProductMix::create([
+    return ScenarioProductMix::factory()->create([
         'scenario_id' => $scenario->id,
         'product_category' => $category->value,
         'product_id' => $productId,
@@ -107,9 +107,8 @@ it('falls back to historical mix when scenario has no SKU overrides', function (
     $scenario = Scenario::factory()->create(['year' => 2026]);
 
     // Only category-level mix, no product_id
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->chain()->create([
         'scenario_id' => $scenario->id,
-        'product_category' => ProductCategory::Chain->value,
         'acq_share' => 0.20,
         'repeat_share' => 0.40,
         'avg_unit_price' => 90.00,

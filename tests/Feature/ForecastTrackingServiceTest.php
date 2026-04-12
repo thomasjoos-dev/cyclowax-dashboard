@@ -61,17 +61,17 @@ function setupTrackingScenario(): Scenario
         ]);
     }
 
-    ScenarioProductMix::create(['scenario_id' => $scenario->id, 'product_category' => ProductCategory::StarterKit->value, 'acq_share' => 0.65, 'repeat_share' => 0.35, 'avg_unit_price' => 200.00]);
-    ScenarioProductMix::create(['scenario_id' => $scenario->id, 'product_category' => ProductCategory::WaxTablet->value, 'acq_share' => 0.35, 'repeat_share' => 0.65, 'avg_unit_price' => 30.00]);
+    ScenarioProductMix::factory()->starterKit()->create(['scenario_id' => $scenario->id]);
+    ScenarioProductMix::factory()->waxTablet()->create(['scenario_id' => $scenario->id]);
 
     foreach ([ProductCategory::StarterKit, ProductCategory::WaxTablet] as $cat) {
         for ($m = 1; $m <= 12; $m++) {
-            SeasonalIndex::create(['month' => $m, 'region' => null, 'product_category' => $cat->value, 'forecast_group' => null, 'index_value' => 1.0, 'source' => 'test']);
+            SeasonalIndex::factory()->flat()->forCategory($cat->value)->create(['month' => $m]);
         }
     }
     foreach (ForecastGroup::cases() as $group) {
         for ($m = 1; $m <= 12; $m++) {
-            SeasonalIndex::create(['month' => $m, 'region' => null, 'product_category' => null, 'forecast_group' => $group->value, 'index_value' => 1.0, 'source' => 'test']);
+            SeasonalIndex::factory()->flat()->forGroup($group->value)->create(['month' => $m]);
         }
     }
 

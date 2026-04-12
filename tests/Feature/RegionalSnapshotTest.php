@@ -45,10 +45,10 @@ function setupSnapshotScenario(): Scenario
     // Seasonal indices
     for ($m = 1; $m <= 12; $m++) {
         foreach ([null, 'de'] as $region) {
-            SeasonalIndex::create(['month' => $m, 'region' => $region, 'product_category' => ProductCategory::WaxTablet->value, 'index_value' => 1.0, 'source' => 'test']);
+            SeasonalIndex::factory()->flat()->forCategory(ProductCategory::WaxTablet->value)->create(['month' => $m, 'region' => $region]);
         }
         foreach (ForecastGroup::cases() as $group) {
-            SeasonalIndex::create(['month' => $m, 'region' => null, 'product_category' => null, 'forecast_group' => $group->value, 'index_value' => 1.0, 'source' => 'test']);
+            SeasonalIndex::factory()->flat()->forGroup($group->value)->create(['month' => $m]);
         }
     }
 
@@ -60,10 +60,11 @@ function setupSnapshotScenario(): Scenario
         ]);
     }
 
-    ScenarioProductMix::create([
+    ScenarioProductMix::factory()->waxTablet()->create([
         'scenario_id' => $scenario->id,
-        'product_category' => ProductCategory::WaxTablet->value,
-        'acq_share' => 1.0, 'repeat_share' => 1.0, 'avg_unit_price' => 27.50,
+        'acq_share' => 1.0,
+        'repeat_share' => 1.0,
+        'avg_unit_price' => 27.50,
     ]);
 
     return $scenario;
