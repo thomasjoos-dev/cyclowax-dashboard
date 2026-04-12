@@ -169,19 +169,53 @@ expect($result)
     ->and($result['total'])->toBeGreaterThan(0);
 ```
 
-### 4.3 HTTP mocking patroon
+### 4.3 HTTP mocking — API client strategie
+
+Dit project heeft drie externe API clients (Shopify, Klaviyo, Odoo). Alle tests die syncers of API clients raken moeten HTTP calls mocken.
+
+**Vangnet:** `Http::preventStrayRequests()` is globaal actief in `tests/Pest.php` — elke ongemockte HTTP call faalt direct. Dit voorkomt dat tests per ongeluk echte API's aanroepen.
+
+**Patroon per API:**
+
+```php
+// Shopify — paginated responses met Link header
+Http::fake([
+    'your-shop.myshopify.com/admin/api/*' => Http::sequence()
+        ->push(['orders' => [...]], 200, ['Link' => '<...>; rel="next"'])
+        ->push(['orders' => []], 200),
+]);
+
+// Klaviyo — cursor-based pagination
+Http::fake([
+    'a.]klaviyo.com/api/*' => Http::response([
+        'data' => [...],
+        'links' => ['next' => null],
+    ]),
+]);
+
+// Odoo — JSON-RPC
+Http::fake([
+    'odoo.example.com/jsonrpc' => Http::response([
+        'result' => [...],
+    ]),
+]);
+```
+
+**Assertions:**
+
 ```php
 it('syncs profiles from API', function () {
     Http::fake([
-        'api.example.com/profiles*' => Http::response([
-            'data' => [['id' => '1', 'name' => 'Test']],
+        'a.klaviyo.com/api/profiles*' => Http::response([
+            'data' => [['id' => '1', 'attributes' => ['email' => 'test@example.com']]],
+            'links' => ['next' => null],
         ]),
     ]);
 
-    $syncer = app(ProfileSyncer::class);
+    $syncer = app(KlaviyoProfileSyncer::class);
     $syncer->sync();
 
-    expect(Profile::count())->toBe(1);
+    expect(KlaviyoProfile::count())->toBe(1);
     Http::assertSentCount(1);
 });
 ```
