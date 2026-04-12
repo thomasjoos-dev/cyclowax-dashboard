@@ -4,9 +4,6 @@ use App\Enums\ForecastRegion;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyOrder;
 use App\Services\Forecast\Demand\CohortProjectionService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function createCohortCustomer(string $countryCode, string $firstOrderDate, array $repeatDates = []): void
 {

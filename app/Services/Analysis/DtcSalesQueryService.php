@@ -231,7 +231,7 @@ class DtcSalesQueryService
             GROUP BY product_name
             ORDER BY revenue DESC
             LIMIT ?
-        ", [$from, $to, $firstOrder ? 1 : 0, $limit]);
+        ", [$from, $to, $firstOrder, $limit]);
     }
 
     /**
@@ -445,7 +445,7 @@ class DtcSalesQueryService
         $params = [$from, $to];
 
         if ($firstOrder !== null) {
-            $params[] = $firstOrder ? 1 : 0;
+            $params[] = $firstOrder;
         }
 
         $result = DB::selectOne("

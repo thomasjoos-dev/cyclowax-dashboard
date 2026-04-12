@@ -7,9 +7,6 @@ use App\Models\ShopifyCustomer;
 use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
 use App\Services\Forecast\Demand\RegionalCostService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function createCostOrder(string $countryCode, float $netRevenue, float $shippingCost, Product $product, int $qty = 1): void
 {

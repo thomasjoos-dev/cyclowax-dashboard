@@ -13,9 +13,6 @@ use App\Models\ShopifyOrder;
 use App\Services\Forecast\Demand\CohortProjectionService;
 use App\Services\Forecast\Demand\DemandForecastService;
 use App\Services\Forecast\Demand\QuarterlyAovCalculator;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('calculates acquisition AOV per quarter from rolling actuals', function () {
     $waxProduct = Product::factory()->create(['product_category' => ProductCategory::WaxTablet->value]);

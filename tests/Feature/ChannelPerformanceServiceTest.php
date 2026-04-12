@@ -4,9 +4,6 @@ use App\Models\AdSpend;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyOrder;
 use App\Services\Analysis\ChannelPerformanceService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('calculates CAC per platform', function () {
     // Google: €500 spend, 5 first orders → CAC = €100

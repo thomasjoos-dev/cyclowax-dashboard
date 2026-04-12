@@ -103,7 +103,7 @@ class InventoryHealthService
                 FROM product_stock_snapshots
                 GROUP BY product_id
             ) latest ON latest.product_id = pss.product_id AND latest.max_date = pss.recorded_at
-            WHERE p.is_active = 1
+            WHERE p.is_active = true
             ORDER BY pss.qty_free ASC
         ');
 

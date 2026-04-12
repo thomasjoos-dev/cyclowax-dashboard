@@ -10,9 +10,6 @@ use App\Models\ShopifyCustomer;
 use App\Models\ShopifyOrder;
 use App\Services\Scoring\FollowerScorer;
 use App\Services\Sync\RiderProfileLinker;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('logs a transition when follower segment changes', function () {
     $klaviyo = KlaviyoProfile::factory()->create([

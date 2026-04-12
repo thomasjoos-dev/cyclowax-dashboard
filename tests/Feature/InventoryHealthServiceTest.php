@@ -5,9 +5,6 @@ use App\Models\ProductStockSnapshot;
 use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
 use App\Services\Forecast\Supply\InventoryHealthService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('calculates burn rate from sales history', function () {
     $product = Product::factory()->create();

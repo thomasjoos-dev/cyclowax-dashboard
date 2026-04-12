@@ -6,9 +6,6 @@ use App\Models\ProductBom;
 use App\Models\ProductBomLine;
 use App\Models\SupplyProfile;
 use App\Services\Forecast\Supply\BomExplosionService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function createComponent(string $sku, string $name, ?ProductCategory $category = null): Product
 {

@@ -3,9 +3,6 @@
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyOrder;
 use App\Services\Forecast\Demand\QuarterlyAovCalculator;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('returns both actual and normalized AOV per quarter', function () {
     $customer = ShopifyCustomer::factory()->create();

@@ -1,9 +1,6 @@
 <?php
 
 use App\Models\SyncState;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('resets a stuck cursor for a specific step', function () {
     SyncState::updateOrCreate(

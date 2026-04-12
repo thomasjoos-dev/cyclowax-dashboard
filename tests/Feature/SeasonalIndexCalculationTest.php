@@ -2,9 +2,6 @@
 
 use App\Models\SeasonalIndex;
 use App\Models\ShopifyOrder;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('calculates seasonal indices from order data', function () {
     // Jan: 10 orders, Jul: 20 orders → Jul should have higher index

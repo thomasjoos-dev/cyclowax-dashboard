@@ -32,9 +32,9 @@ class SkuMixService
             WHERE p.product_category = ?
                 AND so.ordered_at >= ?
                 AND so.financial_status NOT IN (?, ?)
-                AND p.is_active = 1
+                AND p.is_active = true
             GROUP BY p.id
-            HAVING total_units > 0
+            HAVING SUM(sli.quantity) > 0
             ORDER BY total_units DESC
         ', [$category->value, $since, 'voided', 'refunded']);
 
@@ -143,9 +143,9 @@ class SkuMixService
             WHERE p.product_category = ?
                 AND so.ordered_at >= ?
                 AND so.financial_status NOT IN (?, ?)
-                AND p.is_active = 1
+                AND p.is_active = true
             GROUP BY p.id, p.sku, p.name
-            HAVING total_units > 0
+            HAVING SUM(sli.quantity) > 0
             ORDER BY total_units DESC
         ', [$category->value, $since, 'voided', 'refunded']);
 

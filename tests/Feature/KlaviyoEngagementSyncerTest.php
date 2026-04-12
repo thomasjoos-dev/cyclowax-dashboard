@@ -3,10 +3,7 @@
 use App\Models\KlaviyoProfile;
 use App\Models\ShopifyCustomer;
 use App\Services\Sync\KlaviyoEngagementSyncer;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
-
-uses(RefreshDatabase::class);
 
 beforeEach(function () {
     config([

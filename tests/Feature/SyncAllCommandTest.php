@@ -1,9 +1,7 @@
 <?php
 
 use App\Models\SyncState;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
+use Illuminate\Support\Facades\Process;
 
 it('fails when shopify credentials are missing', function () {
     config(['shopify.store' => null, 'shopify.access_token' => null]);
@@ -40,12 +38,15 @@ it('resets stale sync states at pipeline start', function () {
     config(['odoo.url' => 'https://odoo.test', 'odoo.api_key' => 'key']);
     config(['klaviyo.api_key' => 'pk_test']);
 
+    Process::fake([
+        'php artisan *' => Process::result(output: 'Synced.', exitCode: 0),
+    ]);
+
     SyncState::updateOrCreate(
         ['step' => 'klaviyo:sync-profiles'],
         ['status' => 'running', 'started_at' => now()->subMinutes(10)],
     );
 
-    // Pipeline will fail at first step (no real API), but stale state should be reset first
     $this->artisan('sync:all');
 
     $state = SyncState::where('step', 'klaviyo:sync-profiles')->first();

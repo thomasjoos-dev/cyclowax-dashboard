@@ -5,9 +5,6 @@ use App\Models\KlaviyoProfile;
 use App\Models\RiderProfile;
 use App\Services\Api\KlaviyoClient;
 use App\Services\Sync\KlaviyoSegmentSyncer;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function createRiderWithKlaviyo(string $lifecycle, ?string $segment, array $overrides = []): RiderProfile
 {

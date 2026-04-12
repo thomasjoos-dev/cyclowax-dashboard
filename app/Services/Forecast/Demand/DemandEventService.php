@@ -83,7 +83,7 @@ class DemandEventService
                     continue;
                 }
 
-                $eventMonths = max(1, (int) ceil($event->start_date->diffInMonths($event->end_date)));
+                $eventMonths = max(1, (int) $event->start_date->diffInMonths($event->end_date) + 1);
                 $monthlyUnits = (int) ceil($eventCategory->expected_uplift_units / $eventMonths);
 
                 $catValue = $eventCategory->product_category->value;

@@ -1,9 +1,6 @@
 <?php
 
 use App\Services\Forecast\Demand\CohortProjectionService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('projects cohort revenue based on retention curve', function () {
     $service = app(CohortProjectionService::class);

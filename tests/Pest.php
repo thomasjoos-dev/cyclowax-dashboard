@@ -1,6 +1,8 @@
 <?php
 
+use App\Services\Klaviyo\KlaviyoClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /*
@@ -17,6 +19,14 @@ use Tests\TestCase;
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
+
+beforeEach(function () {
+    Http::preventStrayRequests();
+})->in('Feature');
+
+afterEach(function () {
+    app()->forgetInstance(KlaviyoClient::class);
+})->in('Feature');
 
 /*
 |--------------------------------------------------------------------------

@@ -6,9 +6,6 @@ use App\Models\KlaviyoProfile;
 use App\Models\RiderProfile;
 use App\Models\ShopifyCustomer;
 use App\Services\Scoring\FollowerScorer;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function createFollowerProfile(array $klaviyoOverrides = [], array $profileOverrides = []): RiderProfile
 {

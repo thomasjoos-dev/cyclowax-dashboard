@@ -15,10 +15,7 @@ use App\Models\ShopifyOrder;
 use App\Services\Forecast\Demand\CohortProjectionService;
 use App\Services\Forecast\Demand\DemandEventService;
 use App\Services\Forecast\Demand\DemandForecastService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
-
-uses(RefreshDatabase::class);
 
 function setupEventUpliftScenario(): Scenario
 {

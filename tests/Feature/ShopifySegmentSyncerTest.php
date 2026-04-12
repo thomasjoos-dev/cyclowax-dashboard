@@ -5,9 +5,6 @@ use App\Models\RiderProfile;
 use App\Models\ShopifyCustomer;
 use App\Services\Api\ShopifyClient;
 use App\Services\Sync\ShopifySegmentSyncer;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function createCustomerRider(string $segment, array $overrides = []): RiderProfile
 {

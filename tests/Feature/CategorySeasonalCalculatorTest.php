@@ -9,9 +9,6 @@ use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
 use App\Services\Forecast\Demand\CategorySeasonalCalculator;
 use App\Services\Forecast\Demand\DemandEventService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function createOrdersForCategory(ProductCategory $category, array $monthlyUnits): void
 {

@@ -5,9 +5,6 @@ use App\Models\KlaviyoProfile;
 use App\Models\RiderProfile;
 use App\Models\ShopifyCustomer;
 use App\Services\Sync\RiderProfileLinker;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('links Shopify customers with matching Klaviyo profiles', function () {
     $customer = ShopifyCustomer::factory()->create(['email' => 'jan@cyclowax.cc']);

@@ -4,9 +4,6 @@ use App\Enums\ForecastRegion;
 use App\Models\SeasonalIndex;
 use App\Models\ShopifyOrder;
 use App\Services\Forecast\Demand\SeasonalIndexCalculator;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function createOrdersForCountry(string $countryCode, string $date, int $count = 1): void
 {

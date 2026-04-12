@@ -8,9 +8,6 @@ use App\Models\ShopifyCustomer;
 use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
 use App\Services\Forecast\SkuMixService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function createSkuOverride(Scenario $scenario, ProductCategory $category, int $productId, float $skuShare): ScenarioProductMix
 {

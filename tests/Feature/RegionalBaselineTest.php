@@ -4,9 +4,6 @@ use App\Enums\ForecastRegion;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyOrder;
 use App\Services\Forecast\Demand\SalesBaselineService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function createRegionalOrders(string $countryCode, int $count, string $month, bool $isFirstOrder = true, float $revenue = 100.0): void
 {

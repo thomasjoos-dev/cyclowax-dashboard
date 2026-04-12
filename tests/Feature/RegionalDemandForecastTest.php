@@ -11,9 +11,6 @@ use App\Models\ShopifyOrder;
 use App\Services\Forecast\Demand\CohortProjectionService;
 use App\Services\Forecast\Demand\DemandForecastService;
 use App\Services\Forecast\Demand\RegionalForecastAggregator;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function setupRegionalScenario(): Scenario
 {

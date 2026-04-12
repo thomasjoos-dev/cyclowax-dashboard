@@ -1,9 +1,6 @@
 <?php
 
 use App\Models\KlaviyoProfile;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('flags disposable email domains', function () {
     KlaviyoProfile::factory()->create(['email' => 'bot@example.com']);

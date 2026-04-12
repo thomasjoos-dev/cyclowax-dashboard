@@ -3,9 +3,6 @@
 use App\Enums\CustomerSegment;
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyOrder;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function createCustomerWithOrders(array $orderOverrides = [], array $customerOverrides = []): ShopifyCustomer
 {

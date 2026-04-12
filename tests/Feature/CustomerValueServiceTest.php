@@ -3,9 +3,6 @@
 use App\Models\ShopifyCustomer;
 use App\Models\ShopifyOrder;
 use App\Services\Analysis\CustomerValueService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('calculates LTV per customer', function () {
     $customer = ShopifyCustomer::factory()->create(['first_order_at' => '2025-01-15']);

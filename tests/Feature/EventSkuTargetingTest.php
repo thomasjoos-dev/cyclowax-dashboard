@@ -6,9 +6,6 @@ use App\Models\DemandEvent;
 use App\Models\DemandEventCategory;
 use App\Models\Product;
 use App\Services\Forecast\Demand\DemandEventService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('extracts SKU earmarks from product-targeted events', function () {
     $product = Product::factory()->create([

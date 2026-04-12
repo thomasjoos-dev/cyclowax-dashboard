@@ -4,9 +4,6 @@ use App\Enums\ProductCategory;
 use App\Models\ForecastSnapshot;
 use App\Models\Scenario;
 use App\Services\Forecast\Tracking\ForecastTrackingService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 function createSnapshotsWithActuals(Scenario $scenario, string $yearMonth, array $categories): void
 {

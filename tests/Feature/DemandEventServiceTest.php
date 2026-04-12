@@ -4,9 +4,6 @@ use App\Enums\DemandEventType;
 use App\Enums\ProductCategory;
 use App\Models\DemandEvent;
 use App\Services\Forecast\Demand\DemandEventService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('creates a demand event with categories', function () {
     $service = app(DemandEventService::class);

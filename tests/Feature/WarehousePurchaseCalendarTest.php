@@ -5,9 +5,6 @@ use App\Enums\Warehouse;
 use App\Models\Scenario;
 use App\Services\Forecast\Demand\DemandForecastService;
 use App\Services\Forecast\Supply\PurchaseCalendarService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('calls forecastYear with each warehouse region when warehouse is specified', function () {
     $scenario = Scenario::factory()->create(['year' => 2026]);

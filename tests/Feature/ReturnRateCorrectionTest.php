@@ -7,10 +7,7 @@ use App\Models\ShopifyLineItem;
 use App\Models\ShopifyOrder;
 use App\Services\Forecast\Demand\QuarterlyAovCalculator;
 use App\Services\Forecast\Demand\SalesBaselineService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
-
-uses(RefreshDatabase::class);
 
 it('calculates return rate per quarter', function () {
     $customer = ShopifyCustomer::factory()->create();

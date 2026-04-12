@@ -1,9 +1,6 @@
 <?php
 
 use App\Models\ShopifyCustomer;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('detects gender for customers with a first name', function () {
     ShopifyCustomer::factory()->create(['first_name' => 'Thomas', 'country_code' => 'NL', 'gender' => null]);

@@ -6,9 +6,6 @@ use App\Models\Product;
 use App\Models\Scenario;
 use App\Models\ScenarioProductMix;
 use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('belongs to a scenario', function () {
     $scenario = Scenario::factory()->create();

@@ -3,9 +3,6 @@
 use App\Models\Scenario;
 use App\Models\ScenarioAssumption;
 use App\Services\Forecast\Tracking\ScenarioService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('creates a scenario with assumptions', function () {
     $service = app(ScenarioService::class);

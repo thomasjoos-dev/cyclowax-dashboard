@@ -6,9 +6,6 @@ use App\Models\PurchaseCalendarRun;
 use App\Models\Scenario;
 use App\Services\Forecast\Supply\PurchaseCalendarService;
 use App\Services\Forecast\Supply\PurchaseCalendarTrackingService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('persists a purchase calendar run with events', function () {
     $scenario = Scenario::factory()->create(['year' => 2026]);

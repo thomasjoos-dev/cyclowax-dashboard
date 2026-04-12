@@ -6,9 +6,6 @@ use App\Enums\LifecycleStage;
 use App\Models\RiderProfile;
 use App\Models\ShopifyCustomer;
 use App\Services\Analysis\SegmentMovementService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('returns current segment distribution', function () {
     // Create followers
