@@ -3,15 +3,15 @@
 namespace App\Http\Controllers\Api\V1\Analytics;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\RevenueAnalyticsRequest;
 use App\Services\Analysis\RevenueAnalyticsService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 class RevenueAnalyticsController extends Controller
 {
-    public function __invoke(Request $request, RevenueAnalyticsService $service): JsonResponse
+    public function __invoke(RevenueAnalyticsRequest $request, RevenueAnalyticsService $service): JsonResponse
     {
-        $period = $request->query('period', 'mtd');
+        $period = $request->validated('period', 'mtd');
 
         return response()->json([
             'period' => $period,

@@ -9,8 +9,8 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-if (env('SYNC_SCHEDULE_ENABLED', false)) {
-    $dailyAt = env('SYNC_DAILY_AT', '06:00');
+if (config('dashboard.sync_schedule_enabled')) {
+    $dailyAt = config('dashboard.sync_daily_at', '06:00');
     $enrichAt = Carbon::parse($dailyAt)->addHour()->format('H:i');
 
     Schedule::command('sync:all --skip-enrichment')->dailyAt($dailyAt)->withoutOverlapping(10);

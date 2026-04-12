@@ -1,4 +1,4 @@
-import { Head, WhenVisible } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import {
     Bar,
     BarChart,
@@ -22,6 +22,7 @@ import AppLayout from '@/layouts/app-layout';
 import { dashboard } from '@/routes';
 import type { BreadcrumbItem, DashboardProps } from '@/types';
 import { cn } from '@/lib/utils';
+import { formatCurrency, formatNumber } from '@/lib/formatters';
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Dashboard', href: dashboard() }];
 
@@ -30,14 +31,6 @@ const chartColors = {
     secondary: 'var(--color-chart-2)',
     tertiary: 'var(--color-chart-3)',
 };
-
-function formatCurrency(value: number): string {
-    return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0 }).format(value);
-}
-
-function formatNumber(value: number): string {
-    return new Intl.NumberFormat('nl-NL').format(value);
-}
 
 function DeferredSkeleton() {
     return <Skeleton className="h-64 w-full" />;
