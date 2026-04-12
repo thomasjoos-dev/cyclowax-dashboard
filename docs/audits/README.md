@@ -40,7 +40,7 @@ Protocollen zijn **doorlopende regels** die gelden tijdens het bouwen. Ze voorko
 | **Security** | Env management, input validatie, route bescherming, API keys | `docs/protocollen/security-protocol.md` | Actief |
 | **API Design** | RESTful conventies, error format, versioning, response structuur | `docs/protocollen/api-design-protocol.md` | Actief |
 | **Frontend/UI** | Component conventies, shadcn patterns, accessibility, state | `docs/protocollen/frontend-protocol.md` | Actief |
-| **Sync Pipeline** | Monitoring, failure handling, cursor management, idempotency | `docs/protocollen/sync-pipeline-protocol.md` | Stub |
+| **Sync Pipeline** | Monitoring, failure handling, cursor management, idempotency | `docs/protocollen/sync-pipeline-protocol.md` | Actief |
 
 ### Wanneer protocollen van toepassing zijn
 
